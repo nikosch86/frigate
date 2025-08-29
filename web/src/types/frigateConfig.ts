@@ -33,6 +33,7 @@ export type SearchModel = "jinav1" | "jinav2";
 export type SearchModelSize = "small" | "large";
 
 export interface CameraConfig {
+  friendly_name: string;
   audio: {
     enabled: boolean;
     enabled_in_config: boolean;

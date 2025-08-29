@@ -88,7 +88,13 @@ proxy:
   #       See the docs for more info.
   header_map:
     user: x-forwarded-user
-    role: x-forwarded-role
+    role: x-forwarded-groups
+    role_map:
+      admin:
+        - sysadmins
+        - access-level-security
+      viewer:
+        - camera-viewer
   # Optional: Url for logging out a user. This sets the location of the logout url in
   # the UI.
   logout_url: /api/logout
@@ -893,7 +899,7 @@ cameras:
 
     # Optional: Configuration for triggers to automate actions based on semantic search results.
     triggers:
-      # Required: Unique identifier for the trigger (generated automatically from nickname if not specified).
+      # Required: Unique identifier for the trigger (generated automatically from friendly_name if not specified).
       trigger_name:
         # Required: Enable or disable the trigger. (default: shown below)
         enabled: true

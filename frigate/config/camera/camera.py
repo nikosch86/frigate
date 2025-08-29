@@ -2,7 +2,7 @@ import os
 from enum import Enum
 from typing import Optional
 
-from pydantic import Field, PrivateAttr
+from pydantic import Field, PrivateAttr, model_validator
 
 from frigate.const import CACHE_DIR, CACHE_SEGMENT_FORMAT, REGEX_CAMERA_NAME
 from frigate.ffmpeg_presets import (
@@ -51,6 +51,18 @@ class CameraTypeEnum(str, Enum):
 
 class CameraConfig(FrigateBaseModel):
     name: Optional[str] = Field(None, title="Camera name.", pattern=REGEX_CAMERA_NAME)
+
+    friendly_name: Optional[str] = Field(
+        None, title="Camera friendly name used in the Frigate UI."
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_friendly_name(cls, values):
+        if isinstance(values, dict) and "friendly_name" in values:
+            pass
+        return values
+
     enabled: bool = Field(default=True, title="Enable camera.")
 
     # Options with global fallback
