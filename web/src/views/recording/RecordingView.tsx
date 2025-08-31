@@ -50,6 +50,7 @@ import { useFullscreen } from "@/hooks/use-fullscreen";
 import { useTimezone } from "@/hooks/use-date-utils";
 import { useTimelineZoom } from "@/hooks/use-timeline-zoom";
 import { useTranslation } from "react-i18next";
+import { capitalizeAll } from "@/utils/stringUtil";
 import {
   Tooltip,
   TooltipContent,
@@ -446,6 +447,9 @@ export function RecordingView({
         {isMobile && (
           <Logo className="absolute inset-x-1/2 h-8 -translate-x-1/2" />
         )}
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <div className="text-primary">{capitalizeAll(mainCamera)}</div>
+        </div>
         <div className={cn("flex items-center gap-2")}>
           <Button
             className="flex items-center gap-2.5 rounded-lg"

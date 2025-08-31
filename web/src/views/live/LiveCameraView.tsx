@@ -103,6 +103,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { useSessionPersistence } from "@/hooks/use-session-persistence";
+import { capitalizeAll } from "@/utils/stringUtil";
 
 import {
   Select,
@@ -426,47 +427,52 @@ export default function LiveCameraView({
           }
         >
           {!fullscreen ? (
-            <div
-              className={`flex items-center gap-2 ${isMobile ? "landscape:flex-col" : ""}`}
-            >
-              <Button
-                className={`flex items-center gap-2.5 rounded-lg`}
-                aria-label={t("label.back", { ns: "common" })}
-                size="sm"
-                onClick={() => navigate(-1)}
+            <>
+              <div
+                className={`flex items-center gap-2 ${isMobile ? "landscape:flex-col" : ""}`}
               >
-                <IoMdArrowRoundBack className="size-5 text-secondary-foreground" />
-                {isDesktop && (
-                  <div className="text-primary">
-                    {t("button.back", { ns: "common" })}
-                  </div>
-                )}
-              </Button>
-              <Button
-                className="flex items-center gap-2.5 rounded-lg"
-                aria-label={t("history.label")}
-                size="sm"
-                onClick={() => {
-                  navigate("review", {
-                    state: {
-                      severity: "alert",
-                      recording: {
-                        camera: camera.name,
-                        startTime: Date.now() / 1000 - 30,
+                <Button
+                  className={`flex items-center gap-2.5 rounded-lg`}
+                  aria-label={t("label.back", { ns: "common" })}
+                  size="sm"
+                  onClick={() => navigate(-1)}
+                >
+                  <IoMdArrowRoundBack className="size-5 text-secondary-foreground" />
+                  {isDesktop && (
+                    <div className="text-primary">
+                      {t("button.back", { ns: "common" })}
+                    </div>
+                  )}
+                </Button>
+                <Button
+                  className="flex items-center gap-2.5 rounded-lg"
+                  aria-label={t("history.label")}
+                  size="sm"
+                  onClick={() => {
+                    navigate("review", {
+                      state: {
                         severity: "alert",
-                      } as RecordingStartingPoint,
-                    },
-                  });
-                }}
-              >
-                <LuHistory className="size-5 text-secondary-foreground" />
-                {isDesktop && (
-                  <div className="text-primary">
-                    {t("button.history", { ns: "common" })}
-                  </div>
-                )}
-              </Button>
-            </div>
+                        recording: {
+                          camera: camera.name,
+                          startTime: Date.now() / 1000 - 30,
+                          severity: "alert",
+                        } as RecordingStartingPoint,
+                      },
+                    });
+                  }}
+                >
+                  <LuHistory className="size-5 text-secondary-foreground" />
+                  {isDesktop && (
+                    <div className="text-primary">
+                      {t("button.history", { ns: "common" })}
+                    </div>
+                  )}
+                </Button>
+              </div>
+              <div className="absolute left-1/2 -translate-x-1/2">
+                <div className="text-primary">{capitalizeAll(camera.name)}</div>
+              </div>
+            </>
           ) : (
             <div />
           )}

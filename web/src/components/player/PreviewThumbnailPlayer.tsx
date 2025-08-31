@@ -16,7 +16,7 @@ import ImageLoadingIndicator from "../indicators/ImageLoadingIndicator";
 import useContextMenu from "@/hooks/use-contextmenu";
 import ActivityIndicator from "../indicators/activity-indicator";
 import { TimeRange } from "@/types/timeline";
-import { capitalizeFirstLetter } from "@/utils/stringUtil";
+import { capitalizeFirstLetter, capitalizeAll } from "@/utils/stringUtil";
 import { cn } from "@/lib/utils";
 import { InProgressPreview, VideoPreview } from "../preview/ScrubbablePreview";
 import { Preview } from "@/types/preview";
@@ -235,6 +235,9 @@ export default function PreviewThumbnailPlayer({
           />
         )}
         <div className={cn("absolute left-0 top-2", !isSafari && "z-40")}>
+          <div className="mx-3 mb-1 text-xs font-medium text-white">
+            {capitalizeAll(review.camera)}
+          </div>
           <Tooltip>
             <div
               className="flex"
