@@ -28,17 +28,22 @@ const unsupportedErrorCodes = [
   MediaError.MEDIA_ERR_DECODE,
 ];
 
+export interface HlsSource {
+  playlist: string;
+  startPosition?: number;
+}
+
 type HlsVideoPlayerProps = {
   videoRef: MutableRefObject<HTMLVideoElement | null>;
   containerRef?: React.MutableRefObject<HTMLDivElement | null>;
   visible: boolean;
-  currentSource: string;
+  currentSource: HlsSource;
   hotKeys: boolean;
   supportsFullscreen: boolean;
   fullscreen: boolean;
   frigateControls?: boolean;
   inpointOffset?: number;
-  onClipEnded?: () => void;
+  onClipEnded?: (currentTime: number) => void;
   onPlayerLoaded?: () => void;
   onTimeUpdate?: (time: number) => void;
   onPlaying?: () => void;
@@ -113,18 +118,28 @@ export default function HlsVideoPlayer({
     const currentPlaybackRate = videoRef.current.playbackRate;
 
     if (!useHlsCompat) {
-      videoRef.current.src = currentSource;
+      videoRef.current.src = currentSource.playlist;
       videoRef.current.load();
       return;
     }
 
-    if (!hlsRef.current) {
-      hlsRef.current = new Hls();
-      hlsRef.current.attachMedia(videoRef.current);
-    }
-
-    hlsRef.current.loadSource(currentSource);
+    hlsRef.current = new Hls({
+      maxBufferLength: 10,
+      maxBufferSize: 20 * 1000 * 1000,
+      startPosition: currentSource.startPosition,
+    });
+    hlsRef.current.attachMedia(videoRef.current);
+    hlsRef.current.loadSource(currentSource.playlist);
     videoRef.current.playbackRate = currentPlaybackRate;
+
+    return () => {
+      // we must destroy the hlsRef every time the source changes
+      // so that we can create a new HLS instance with startPosition
+      // set at the optimal point in time
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
+    }
   }, [videoRef, hlsRef, useHlsCompat, currentSource]);
 
   // state handling
@@ -374,7 +389,11 @@ export default function HlsVideoPlayer({
               }
             }
           }}
-          onEnded={onClipEnded}
+          onEnded={() => {
+            if (onClipEnded) {
+              onClipEnded(getVideoTime() ?? 0);
+            }
+          }}
           onError={(e) => {
             if (
               !hlsRef.current &&
