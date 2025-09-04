@@ -70,9 +70,16 @@ fi
 
 # arch specific packages
 if [[ "${TARGETARCH}" == "amd64" ]]; then
+  # Install non-free version of i965 driver
+  sed -i -E "/^Components: main$/s/main/main contrib non-free non-free-firmware/" "/etc/apt/sources.list.d/debian.sources" \
+      && apt-get -qq update \
+      && apt-get install --no-install-recommends --no-install-suggests -y i965-va-driver-shaders \
+      && sed -i -E "/^Components: main contrib non-free non-free-firmware$/s/main contrib non-free non-free-firmware/main/" "/etc/apt/sources.list.d/debian.sources" \
+      && apt-get update
+
     # install amd / intel-i965 driver packages
     apt-get -qq install --no-install-recommends --no-install-suggests -y \
-        i965-va-driver intel-gpu-tools onevpl-tools \
+        intel-gpu-tools onevpl-tools \
         libva-drm2 \
         mesa-va-drivers radeontop
 
@@ -99,10 +106,10 @@ if [[ "${TARGETARCH}" == "amd64" ]]; then
     rm libigdgmm12_22.5.5_amd64.deb
 
     # legacy packages
-    wget https://github.com/intel/compute-runtime/releases/download/24.35.30872.22/intel-opencl-icd-legacy1_24.35.30872.22_amd64.deb
-    wget https://github.com/intel/compute-runtime/releases/download/24.35.30872.22/intel-level-zero-gpu-legacy1_1.3.30872.22_amd64.deb
-    wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17537.20/intel-igc-opencl_1.0.17537.20_amd64.deb
-    wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17537.20/intel-igc-core_1.0.17537.20_amd64.deb
+    wget https://github.com/intel/compute-runtime/releases/download/24.35.30872.36/intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb
+    wget https://github.com/intel/compute-runtime/releases/download/24.35.30872.36/intel-level-zero-gpu-legacy1_1.5.30872.36_amd64.deb
+    wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17537.24/intel-igc-opencl_1.0.17537.24_amd64.deb
+    wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17537.24/intel-igc-core_1.0.17537.24_amd64.deb
     # standard packages
     wget https://github.com/intel/compute-runtime/releases/download/24.52.32224.5/intel-opencl-icd_24.52.32224.5_amd64.deb
     wget https://github.com/intel/compute-runtime/releases/download/24.52.32224.5/intel-level-zero-gpu_1.6.32224.5_amd64.deb
