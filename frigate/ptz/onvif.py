@@ -30,6 +30,7 @@ class OnvifCommandEnum(str, Enum):
     move_right = "move_right"
     move_up = "move_up"
     preset = "preset"
+    set_return_preset = "set_return_preset"
     stop = "stop"
     zoom_in = "zoom_in"
     zoom_out = "zoom_out"
@@ -107,6 +108,7 @@ class OnvifController:
                 "active": False,
                 "features": [],
                 "presets": {},
+                "sunba_quirks": cam.onvif.sunba_quirks,
             }
             return True
         except (Fault, ONVIFError, TransportError, Exception) as e:
@@ -143,7 +145,7 @@ class OnvifController:
 
         try:
             profiles = await media.GetProfiles()
-            logger.debug(f"Onvif profiles for {camera_name}: {profiles}")
+            # logger.debug(f"Onvif profiles for {camera_name}: {profiles}")
         except (Fault, ONVIFError, TransportError, Exception) as e:
             logger.error(
                 f"Unable to get Onvif media profiles for camera: {camera_name}: {e}"
@@ -164,7 +166,7 @@ class OnvifController:
             ):
                 # use the first profile that has a valid ptz configuration
                 profile = onvif_profile
-                logger.debug(f"Selected Onvif profile for {camera_name}: {profile}")
+                # logger.debug(f"Selected Onvif profile for {camera_name}: {profile}")
                 break
 
         if profile is None:
@@ -176,9 +178,9 @@ class OnvifController:
         # get the PTZ config for the profile
         try:
             configs = profile.PTZConfiguration
-            logger.debug(
-                f"Onvif ptz config for media profile in {camera_name}: {configs}"
-            )
+            # logger.debug(
+            #     f"Onvif ptz config for media profile in {camera_name}: {configs}"
+            # )
         except Exception as e:
             logger.error(
                 f"Invalid Onvif PTZ configuration for camera: {camera_name}: {e}"
@@ -201,7 +203,7 @@ class OnvifController:
             request = ptz.create_type("GetConfigurationOptions")
             request.ConfigurationToken = profile.PTZConfiguration.token
             ptz_config = await ptz.GetConfigurationOptions(request)
-            logger.debug(f"Onvif config for {camera_name}: {ptz_config}")
+            # logger.debug(f"Onvif config for {camera_name}: {ptz_config}")
 
             service_capabilities_request = ptz.create_type("GetServiceCapabilities")
             self.cams[camera_name]["service_capabilities_request"] = (
@@ -225,7 +227,7 @@ class OnvifController:
             self.cams[camera_name]["status_request"] = status_request
             try:
                 status = await ptz.GetStatus(status_request)
-                logger.debug(f"Onvif status config for {camera_name}: {status}")
+                # logger.debug(f"Onvif status config for {camera_name}: {status}")
             except Exception as e:
                 logger.warning(f"Unable to get status from camera: {camera_name}: {e}")
                 status = None
@@ -396,6 +398,48 @@ class OnvifController:
         )
         self.cams[camera_name]["active"] = False
 
+    def _apply_sunba_speed_swap(
+        self, camera_name: str, pan_velocity: float, tilt_velocity: float
+    ) -> tuple[float, float]:
+        """Apply Sunba speed reversal workaround.
+
+        Sunba cameras have a bug where if pan and tilt velocities differ,
+        the MAGNITUDES (speeds) are swapped while directions are preserved.
+        We pre-swap them so the camera's bug results in correct movement.
+        """
+        if not self.cams[camera_name].get("sunba_quirks", False):
+            return pan_velocity, tilt_velocity
+
+        # Only apply if both velocities are non-zero and different magnitudes
+        if (
+            pan_velocity is not None
+            and tilt_velocity is not None
+            and abs(pan_velocity) != abs(tilt_velocity)
+        ):
+            logger.debug(
+                f"{camera_name}: Applying Sunba speed swap workaround - "
+                f"original pan={pan_velocity:.3f}, tilt={tilt_velocity:.3f}"
+            )
+
+            pan_direction = 1 if pan_velocity >= 0 else -1
+            tilt_direction = 1 if tilt_velocity >= 0 else -1
+
+            pan_speed = abs(pan_velocity)
+            tilt_speed = abs(tilt_velocity)
+
+            # Swap magnitudes while preserving directions
+            corrected_pan = tilt_speed * pan_direction
+            corrected_tilt = pan_speed * tilt_direction
+
+            logger.debug(
+                f"{camera_name}: Sunba corrected speeds - "
+                f"pan={corrected_pan:.3f}, tilt={corrected_tilt:.3f}"
+            )
+
+            return corrected_pan, corrected_tilt
+
+        return pan_velocity, tilt_velocity
+
     async def _move(self, camera_name: str, command: OnvifCommandEnum) -> None:
         if self.cams[camera_name]["active"]:
             logger.warning(
@@ -518,6 +562,151 @@ class OnvifController:
 
         self.cams[camera_name]["active"] = False
 
+    async def _move_continuous_timed(
+        self, camera_name: str, pan_velocity: float, tilt_velocity: float, duration: float
+    ) -> None:
+        """Move PTZ using ContinuousMove with timed stop for autotracking.
+
+        This method is used for cameras that support ContinuousMove but not
+        RelativeMove with FOV coordinates. It moves at a given velocity for
+        a calculated duration to achieve the desired position change.
+        """
+        if "pt" not in self.cams[camera_name]["features"]:
+            logger.error(f"{camera_name} does not support ONVIF ContinuousMove.")
+            return
+
+        logger.debug(
+            f"{camera_name} ContinuousMove: pan_vel={pan_velocity:.3f}, "
+            f"tilt_vel={tilt_velocity:.3f}, duration={duration:.3f}s"
+        )
+
+        if self.cams[camera_name]["active"]:
+            logger.warning(f"{camera_name} is already moving, not executing move...")
+            return
+
+        self.cams[camera_name]["active"] = True
+        self.ptz_metrics[camera_name].motor_stopped.clear()
+        self.ptz_metrics[camera_name].start_time.value = self.ptz_metrics[
+            camera_name
+        ].frame_time.value
+        self.ptz_metrics[camera_name].stop_time.value = 0
+
+        # Apply Sunba speed swap workaround if needed
+        corrected_pan, corrected_tilt = self._apply_sunba_speed_swap(
+            camera_name, pan_velocity, tilt_velocity
+        )
+
+        move_request = self.cams[camera_name]["move_request"]
+        move_request.Velocity = {
+            "PanTilt": {
+                "x": corrected_pan,
+                "y": corrected_tilt,
+            }
+        }
+
+        try:
+            await self.cams[camera_name]["ptz"].ContinuousMove(move_request)
+
+            # Wait for calculated duration
+            await asyncio.sleep(duration)
+
+            # Stop movement
+            await self._stop(camera_name)
+
+            # For Sunba cameras, GetStatus is unreliable, so manually set motor_stopped
+            # after the timed movement completes
+            if self.cams[camera_name].get("sunba_quirks", False):
+                self.ptz_metrics[camera_name].motor_stopped.set()
+                self.ptz_metrics[camera_name].stop_time.value = self.ptz_metrics[
+                    camera_name
+                ].frame_time.value
+                logger.debug(
+                    f"{camera_name}: Sunba quirks - manually setting motor_stopped after timed move"
+                )
+
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.warning(f"ContinuousMove for {camera_name} failed: {e}")
+            self.cams[camera_name]["active"] = False
+
+    async def _move_continuous_timed_with_zoom(
+        self,
+        camera_name: str,
+        pan_velocity: float,
+        tilt_velocity: float,
+        duration: float,
+        zoom_velocity: float,
+    ) -> None:
+        """Move PTZ with zoom using ContinuousMove for cameras with zoom support.
+
+        For Sunba cameras, pan/tilt and zoom are sent as separate commands
+        due to a firmware bug where combining them causes only zoom to work.
+        """
+        sunba_quirks = self.cams[camera_name].get("sunba_quirks", False)
+
+        if sunba_quirks:
+            logger.debug(
+                f"{camera_name}: Sunba quirks - separating pan/tilt and zoom commands"
+            )
+
+            if pan_velocity != 0 or tilt_velocity != 0:
+                await self._move_continuous_timed(
+                    camera_name, pan_velocity, tilt_velocity, duration
+                )
+
+            if zoom_velocity != 0:
+                await self._zoom_continuous_timed(camera_name, zoom_velocity, duration)
+
+        else:
+            corrected_pan, corrected_tilt = self._apply_sunba_speed_swap(
+                camera_name, pan_velocity, tilt_velocity
+            )
+
+            move_request = self.cams[camera_name]["move_request"]
+            move_request.Velocity = {
+                "PanTilt": {"x": corrected_pan, "y": corrected_tilt},
+                "Zoom": {"x": zoom_velocity},
+            }
+
+            self.cams[camera_name]["active"] = True
+            self.ptz_metrics[camera_name].motor_stopped.clear()
+
+            try:
+                await self.cams[camera_name]["ptz"].ContinuousMove(move_request)
+                await asyncio.sleep(duration)
+                await self._stop(camera_name)
+            except (Fault, ONVIFError, TransportError, Exception) as e:
+                logger.warning(f"ContinuousMove with zoom for {camera_name} failed: {e}")
+                self.cams[camera_name]["active"] = False
+
+    async def _zoom_continuous_timed(
+        self, camera_name: str, zoom_velocity: float, duration: float
+    ) -> None:
+        """Execute zoom-only ContinuousMove (used by Sunba workaround)."""
+        if "zoom" not in self.cams[camera_name]["features"]:
+            return
+
+        move_request = self.cams[camera_name]["move_request"]
+        move_request.Velocity = {"Zoom": {"x": zoom_velocity}}
+
+        self.cams[camera_name]["active"] = True
+        self.ptz_metrics[camera_name].motor_stopped.clear()
+
+        try:
+            await self.cams[camera_name]["ptz"].ContinuousMove(move_request)
+            await asyncio.sleep(duration)
+            await self._stop(camera_name)
+
+            # Sunba quirks: manually set motor_stopped
+            if self.cams[camera_name].get("sunba_quirks", False):
+                self.ptz_metrics[camera_name].motor_stopped.set()
+                self.ptz_metrics[camera_name].stop_time.value = self.ptz_metrics[
+                    camera_name
+                ].frame_time.value
+
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.warning(f"Zoom ContinuousMove for {camera_name} failed: {e}")
+            self.cams[camera_name]["active"] = False
+
     async def _move_to_preset(self, camera_name: str, preset: str) -> None:
         if preset not in self.cams[camera_name]["presets"]:
             logger.error(f"{preset} is not a valid preset for {camera_name}")
@@ -537,6 +726,31 @@ class OnvifController:
         )
 
         self.cams[camera_name]["active"] = False
+
+    async def _set_preset(self, camera_name: str, preset: str) -> None:
+        """Update an existing preset to the current camera position.
+
+        Args:
+            camera_name: Name of camera
+            preset: Name/token of the preset to update
+        """
+        if preset not in self.cams[camera_name]["presets"]:
+            logger.error(f"{preset} is not a valid preset for {camera_name}")
+            return
+
+        move_request = self.cams[camera_name]["move_request"]
+        preset_token = self.cams[camera_name]["presets"][preset]
+
+        try:
+            await self.cams[camera_name]["ptz"].SetPreset(
+                {
+                    "ProfileToken": move_request.ProfileToken,
+                    "PresetToken": preset_token,
+                }
+            )
+            logger.info(f"Updated preset '{preset}' to current position for {camera_name}")
+        except Exception as e:
+            logger.error(f"Failed to set preset '{preset}' for {camera_name}: {e}")
 
     async def _zoom(self, camera_name: str, command: OnvifCommandEnum) -> None:
         if self.cams[camera_name]["active"]:
@@ -622,6 +836,10 @@ class OnvifController:
                 await self._stop(camera_name)
             elif command == OnvifCommandEnum.preset:
                 await self._move_to_preset(camera_name, param)
+            elif command == OnvifCommandEnum.set_return_preset:
+                # Get the return_preset from config and update it to current position
+                return_preset = self.config.cameras[camera_name].onvif.autotracking.return_preset
+                await self._set_preset(camera_name, return_preset)
             elif command == OnvifCommandEnum.move_relative:
                 _, pan, tilt = param.split("_")
                 await self._move_relative(camera_name, float(pan), float(tilt), 0, 1)

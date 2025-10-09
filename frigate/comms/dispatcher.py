@@ -477,7 +477,10 @@ class Dispatcher:
     def _on_ptz_command(self, camera_name: str, payload: str) -> None:
         """Callback for ptz topic."""
         try:
-            if "preset" in payload.lower():
+            if "set_return_preset" in payload.lower():
+                command = OnvifCommandEnum.set_return_preset
+                param = payload.lower()[payload.index("_") + 1 :]
+            elif "preset" in payload.lower():
                 command = OnvifCommandEnum.preset
                 param = payload.lower()[payload.index("_") + 1 :]
             elif "move_relative" in payload.lower():

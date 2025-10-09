@@ -64,6 +64,7 @@ import {
   FaCog,
   FaCompress,
   FaExpand,
+  FaSave,
   FaMicrophone,
   FaMicrophoneSlash,
 } from "react-icons/fa";
@@ -913,37 +914,54 @@ function PtzControlPanel({
         </TooltipProvider>
       )}
       {(ptz?.presets?.length ?? 0) > 0 && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenu modal={!isDesktop}>
-                <DropdownMenuTrigger asChild>
-                  <Button aria-label={t("ptz.presets")}>
-                    <BsThreeDotsVertical />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  className="scrollbar-container max-h-[40dvh] overflow-y-auto"
-                  onCloseAutoFocus={(e) => e.preventDefault()}
+        <>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenu modal={!isDesktop}>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-label={t("ptz.presets")}>
+                      <BsThreeDotsVertical />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    className="scrollbar-container max-h-[40dvh] overflow-y-auto"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                  >
+                    {ptz?.presets.map((preset) => (
+                      <DropdownMenuItem
+                        key={preset}
+                        aria-label={preset}
+                        className="cursor-pointer"
+                        onSelect={() => sendPtz(`preset_${preset}`)}
+                      >
+                        {preset}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t("ptz.presets")}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label="Set Return Preset"
+                  onClick={() => sendPtz("SET_RETURN_PRESET")}
                 >
-                  {ptz?.presets.map((preset) => (
-                    <DropdownMenuItem
-                      key={preset}
-                      aria-label={preset}
-                      className="cursor-pointer"
-                      onSelect={() => sendPtz(`preset_${preset}`)}
-                    >
-                      {preset}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t("ptz.presets")}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+                  <FaSave />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Set Return Preset to Current Position</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </>
       )}
     </div>
   );

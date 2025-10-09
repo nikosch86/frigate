@@ -212,6 +212,8 @@ class PtzAutoTracker:
         self.move_coefficients: dict[str, object] = {}
         self.zoom_time: dict[str, float] = {}
         self.zoom_factor: dict[str, object] = {}
+        self.movement_mode: dict[str, str] = {}  # "relative_fov" or "continuous_timed"
+        self.continuous_speed: dict[str, float] = {}  # Calibrated speed (FOV units/sec)
 
         # if cam is set to autotrack, onvif should be set up
         for camera, camera_config in self.config.cameras.items():
@@ -271,9 +273,25 @@ class PtzAutoTracker:
                 self.ptz_metrics[camera].autotracker_enabled.value = False
                 return
 
-            if "pt-r-fov" not in self.onvif.cams[camera]["features"]:
+            # Determine which movement mode this camera supports
+            if "pt-r-fov" in self.onvif.cams[camera]["features"]:
+                self.movement_mode[camera] = "relative_fov"
+                logger.info(f"{camera}: Using RelativeMove (FOV) for autotracking")
+
+            elif "pt" in self.onvif.cams[camera]["features"]:
+                self.movement_mode[camera] = "continuous_timed"
+                # Use configured speed or default value
+                self.continuous_speed[camera] = camera_config.onvif.autotracking.continuous_speed
+                logger.info(
+                    f"{camera}: Using ContinuousMove (timed) for autotracking - "
+                    f"speed={self.continuous_speed[camera]:.1f} FOV units/sec - "
+                    f"precision may be lower than RelativeMove, calibration recommended"
+                )
+
+            else:
                 logger.warning(
-                    f"Disabling autotracking for {camera}: FOV relative movement not supported"
+                    f"Disabling autotracking for {camera}: "
+                    f"No supported movement method (need pt-r-fov or pt)"
                 )
                 camera_config.onvif.autotracking.enabled = False
                 self.ptz_metrics[camera].autotracker_enabled.value = False
@@ -596,6 +614,52 @@ class PtzAutoTracker:
 
             self._write_config(camera)
 
+    def _calculate_continuous_move_params(
+        self, camera: str, pan_delta: float, tilt_delta: float
+    ) -> tuple[float, float, float]:
+        """Calculate velocity and duration for ContinuousMove based on FOV delta.
+
+        For cameras using continuous_timed mode, this converts a desired position
+        change (in normalized FOV coordinates) into velocity and duration parameters
+        for ContinuousMove.
+        """
+        speed = self.continuous_speed[camera]
+
+        # Vertical movement scaling - tilt movements should be slower and more precise
+        tilt_scale = 0.1  # 10% of pan movements
+
+        effective_tilt_delta = tilt_delta * tilt_scale
+
+        # Calculate effective distance to travel (Euclidean distance in FOV space)
+        effective_distance = np.sqrt(pan_delta**2 + effective_tilt_delta**2)
+
+        # Skip movement if too small (avoid micro-adjustments)
+        if effective_distance < 0.01:  # Less than 1% of FOV
+            logger.debug(f"{camera}: Distance {effective_distance:.4f} too small, skipping move")
+            return 0.0, 0.0, 0.0
+
+        velocity_magnitude = 0.2 # use 20% of max speed
+
+        # Calculate duration: at this velocity, moving 'effective_distance' takes effective_distance/(speed * velocity_magnitude)
+        duration = effective_distance / (speed * velocity_magnitude)
+
+        # Clamp duration to reasonable bounds (in seconds)
+        duration = np.clip(duration, 0.1, 1.25)
+
+        pan_velocity = (pan_delta / effective_distance) * velocity_magnitude
+        tilt_velocity = (effective_tilt_delta / effective_distance) * velocity_magnitude
+
+        logger.debug(
+            f"{camera}: ContinuousMove params - "
+            f"FOV delta=({pan_delta:.3f}, {tilt_delta:.3f}), "
+            f"effective_tilt={effective_tilt_delta:.3f}, "
+            f"effective_distance={effective_distance:.3f}, speed={speed:.3f}, "
+            f"velocity=({pan_velocity:.3f}, {tilt_velocity:.3f}), "
+            f"duration={duration:.3f}s"
+        )
+
+        return pan_velocity, tilt_velocity, duration
+
     def _predict_movement_time(self, camera, pan, tilt):
         combined_movement = abs(pan) + abs(tilt)
         input_data = np.array([self.intercept[camera], combined_movement])
@@ -740,24 +804,51 @@ class PtzAutoTracker:
                     continue
 
                 else:
-                    if (
-                        self.config.cameras[camera].onvif.autotracking.zooming
-                        == ZoomingModeEnum.relative
-                    ):
-                        await self.onvif._move_relative(camera, pan, tilt, zoom, 1)
-                    else:
+                    if self.movement_mode[camera] == "relative_fov":
+                        if (
+                            self.config.cameras[camera].onvif.autotracking.zooming
+                            == ZoomingModeEnum.relative
+                        ):
+                            await self.onvif._move_relative(camera, pan, tilt, zoom, 1)
+                        else:
+                            if pan != 0 or tilt != 0:
+                                await self.onvif._move_relative(camera, pan, tilt, 0, 1)
+
+                                # Wait until the camera finishes moving
+                                while not self.ptz_metrics[camera].motor_stopped.is_set():
+                                    await self.onvif.get_camera_status(camera)
+
+                            if (
+                                zoom > 0
+                                and self.ptz_metrics[camera].zoom_level.value != zoom
+                            ):
+                                await self.onvif._zoom_absolute(camera, zoom, 1)
+
+                    elif self.movement_mode[camera] == "continuous_timed":
                         if pan != 0 or tilt != 0:
-                            await self.onvif._move_relative(camera, pan, tilt, 0, 1)
+                            pan_vel, tilt_vel, duration = self._calculate_continuous_move_params(
+                                camera, pan, tilt
+                            )
 
-                            # Wait until the camera finishes moving
-                            while not self.ptz_metrics[camera].motor_stopped.is_set():
-                                await self.onvif.get_camera_status(camera)
+                            if duration > 0:
+                                await self.onvif._move_continuous_timed(
+                                    camera, pan_vel, tilt_vel, duration
+                                )
 
+                                # Wait for movement to complete
+                                while not self.ptz_metrics[camera].motor_stopped.is_set():
+                                    await self.onvif.get_camera_status(camera)
+
+                        # Handle zoom separately if camera supports absolute zoom
                         if (
                             zoom > 0
+                            and "zoom-a" in self.onvif.cams[camera]["features"]
                             and self.ptz_metrics[camera].zoom_level.value != zoom
                         ):
                             await self.onvif._zoom_absolute(camera, zoom, 1)
+
+                            while not self.ptz_metrics[camera].motor_stopped.is_set():
+                                await self.onvif.get_camera_status(camera)
 
                     # Wait until the camera finishes moving
                     while not self.ptz_metrics[camera].motor_stopped.is_set():
@@ -1136,8 +1227,11 @@ class PtzAutoTracker:
             camera_config.onvif.autotracking.movement_weights
         ):  # use estimates if we have available coefficients
             predicted_movement_time = self._predict_movement_time(camera, pan, tilt)
+        elif self.movement_mode.get(camera) == "continuous_timed":
+            _, _, duration = self._calculate_continuous_move_params(camera, pan, tilt)
+            predicted_movement_time = duration
 
-            if np.any(average_velocity):
+            if predicted_movement_time > 0 and np.any(average_velocity):
                 # this box could exceed the frame boundaries if velocity is high
                 # but we'll handle that in _enqueue_move() as two separate moves
                 current_box = np.array(obj.obj_data["box"])

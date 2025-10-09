@@ -42,6 +42,13 @@ class PtzAutotrackConfig(FrigateBaseModel):
     timeout: int = Field(
         default=10, title="Seconds to delay before returning to preset."
     )
+    continuous_speed: float = Field(
+        default=2.0,
+        title="Movement speed for ContinuousMove PTZ cameras (FOV units/sec).",
+        description="How many FOV units the camera traverses per second at velocity=1.0. Higher values mean faster movement. Typical range: 0.5-4.0",
+        ge=0.1,
+        le=10.0,
+    )
     movement_weights: Optional[Union[str, list[str]]] = Field(
         default_factory=list,
         title="Internal value used for PTZ movements based on the speed of your camera's motor.",
@@ -84,4 +91,8 @@ class OnvifConfig(FrigateBaseModel):
     ignore_time_mismatch: bool = Field(
         default=False,
         title="Onvif Ignore Time Synchronization Mismatch Between Camera and Server",
+    )
+    sunba_quirks: bool = Field(
+        default=False,
+        title="Enable Sunba camera compatibility workarounds for broken PTZ implementation",
     )
