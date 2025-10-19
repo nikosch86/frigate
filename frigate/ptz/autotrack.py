@@ -214,6 +214,9 @@ class PtzAutoTracker:
         self.zoom_factor: dict[str, object] = {}
         self.movement_mode: dict[str, str] = {}  # "relative_fov" or "continuous_timed"
         self.continuous_speed: dict[str, float] = {}  # Calibrated speed (FOV units/sec)
+        self.continuous_zoom_speed: dict[str, float] = {}  # Zoom speed for ContinuousMove cameras
+        self.estimated_zoom_position: dict[str, float] = {}  # Estimated zoom position for cameras that don't report zoom level
+        self.native_zoom_range: dict[str, tuple[float, float]] = {}  # Native zoom range in camera units (e.g., 1-30 for 30x camera)
 
         # if cam is set to autotrack, onvif should be set up
         for camera, camera_config in self.config.cameras.items():
@@ -282,11 +285,34 @@ class PtzAutoTracker:
                 self.movement_mode[camera] = "continuous_timed"
                 # Use configured speed or default value
                 self.continuous_speed[camera] = camera_config.onvif.autotracking.continuous_speed
+                self.continuous_zoom_speed[camera] = camera_config.onvif.autotracking.continuous_zoom_speed
                 logger.info(
                     f"{camera}: Using ContinuousMove (timed) for autotracking - "
                     f"speed={self.continuous_speed[camera]:.1f} FOV units/sec - "
                     f"precision may be lower than RelativeMove, calibration recommended"
                 )
+
+                # Log zoom capabilities for ContinuousMove cameras based on configured mode
+                if camera_config.onvif.autotracking.zooming == ZoomingModeEnum.continuous:
+                    if "zoom" in self.onvif.cams[camera]["features"]:
+                        logger.info(
+                            f"{camera}: Using continuous zoom for zoom control - "
+                            f"zoom_speed={self.continuous_zoom_speed[camera]:.1f} units/sec"
+                        )
+                    else:
+                        logger.warning(f"{camera}: Continuous zoom configured but not supported")
+                elif camera_config.onvif.autotracking.zooming == ZoomingModeEnum.absolute:
+                    if "zoom-a" in self.onvif.cams[camera]["features"]:
+                        logger.info(f"{camera}: Using absolute zoom (zoom-a) for zoom control")
+                    else:
+                        logger.warning(f"{camera}: Absolute zoom configured but not supported")
+                elif camera_config.onvif.autotracking.zooming == ZoomingModeEnum.relative:
+                    if "zoom-r" in self.onvif.cams[camera]["features"]:
+                        logger.info(f"{camera}: Using relative zoom (zoom-r) for zoom control")
+                    else:
+                        logger.warning(f"{camera}: Relative zoom configured but not supported")
+                else:
+                    logger.info(f"{camera}: Zooming disabled for autotracking")
 
             else:
                 logger.warning(
@@ -314,6 +340,62 @@ class PtzAutoTracker:
 
         if self.onvif.cams[camera]["init"]:
             await self.onvif.get_camera_status(camera)
+
+            # Check if camera reports zoom level when zooming is enabled
+            if camera_config.onvif.autotracking.zooming != ZoomingModeEnum.disabled:
+                zoom_level = self.ptz_metrics[camera].zoom_level.value
+                if zoom_level is None or (zoom_level == 0.0 and
+                    self.ptz_metrics[camera].max_zoom.value == 0.0 and
+                    self.ptz_metrics[camera].min_zoom.value == 0.0):
+                    # For continuous zoom mode, we can use estimated position tracking
+                    if camera_config.onvif.autotracking.zooming == ZoomingModeEnum.continuous:
+                        logger.warning(
+                            f"{camera}: Camera does not report current zoom level. "
+                            f"Using estimated zoom position tracking for continuous zoom mode."
+                        )
+
+                        # Store native zoom range if configured
+                        if camera_config.onvif.autotracking.assumed_zoom_range:
+                            min_native, max_native = camera_config.onvif.autotracking.assumed_zoom_range
+                            self.native_zoom_range[camera] = (min_native, max_native)
+                            # Internal tracking uses normalized 0.0-1.0 range
+                            self.ptz_metrics[camera].min_zoom.value = 0.0
+                            self.ptz_metrics[camera].max_zoom.value = 1.0
+                            logger.info(
+                                f"{camera}: Native zoom range configured: {min_native:.1f}x - {max_native:.1f}x"
+                            )
+                        else:
+                            # Default: assume 1x-30x zoom (common for PTZ cameras)
+                            self.native_zoom_range[camera] = (1.0, 30.0)
+                            self.ptz_metrics[camera].min_zoom.value = 0.0
+                            self.ptz_metrics[camera].max_zoom.value = 1.0
+                            logger.info(
+                                f"{camera}: Using default zoom range: 1x - 30x (configure assumed_zoom_range for accuracy)"
+                            )
+
+                        # Initialize estimated position based on preset_zoom_level or middle of range
+                        if camera_config.onvif.autotracking.preset_zoom_level is not None:
+                            # Convert native preset zoom to normalized position
+                            native_preset = camera_config.onvif.autotracking.preset_zoom_level
+                            self.estimated_zoom_position[camera] = self._native_to_normalized_zoom(camera, native_preset)
+                            logger.info(
+                                f"{camera}: Preset at {native_preset:.1f}x zoom "
+                                f"(normalized position: {self.estimated_zoom_position[camera]:.2f})"
+                            )
+                        else:
+                            # Initialize to middle of the normalized range
+                            self.estimated_zoom_position[camera] = 0.5
+                            native_middle = self._normalized_to_native_zoom(camera, 0.5)
+                            logger.info(
+                                f"{camera}: Using middle position (normalized: 0.5, native: {native_middle:.1f}x)"
+                            )
+                    else:
+                        # Absolute and relative zoom modes require zoom level reporting
+                        logger.warning(
+                            f"{camera}: Camera does not report current zoom level. "
+                            f"Disabling zooming for autotracking as absolute/relative zoom requires position feedback."
+                        )
+                        camera_config.onvif.autotracking.zooming = ZoomingModeEnum.disabled
 
             # movement queue with asyncio on OnvifController loop
             asyncio.run_coroutine_threadsafe(
@@ -359,6 +441,31 @@ class PtzAutoTracker:
         self.dispatcher.publish(f"{camera}/ptz_autotracker/active", "OFF", retain=False)
         self.autotracker_init[camera] = True
 
+    def _native_to_normalized_zoom(self, camera: str, native_zoom: float) -> float:
+        """Convert native zoom value (e.g., 10x) to normalized 0.0-1.0 range."""
+        if camera not in self.native_zoom_range:
+            # No native range defined, assume already normalized
+            return native_zoom
+
+        min_native, max_native = self.native_zoom_range[camera]
+
+        # Convert to 0.0-1.0 range
+        # Linear mapping: native_min -> 0.0, native_max -> 1.0
+        normalized = (native_zoom - min_native) / (max_native - min_native)
+        return np.clip(normalized, 0.0, 1.0)
+
+    def _normalized_to_native_zoom(self, camera: str, normalized_zoom: float) -> float:
+        """Convert normalized 0.0-1.0 zoom to native units (e.g., 10x)."""
+        if camera not in self.native_zoom_range:
+            # No native range defined, return as-is
+            return normalized_zoom
+
+        min_native, max_native = self.native_zoom_range[camera]
+
+        # Convert from 0.0-1.0 to native range
+        native = min_native + (normalized_zoom * (max_native - min_native))
+        return native
+
     def _write_config(self, camera):
         config_file = find_config_file()
 
@@ -376,7 +483,9 @@ class PtzAutoTracker:
         # move the camera from the preset in steps and measure the time it takes to move that amount
         # this will allow us to predict movement times with a simple linear regression
         # start with 0 so we can determine a baseline (to be used as the intercept in the regression calc)
-        # TODO: take zooming into account too
+        # TODO: Extend calibration for ContinuousMove cameras to measure continuous_zoom_speed
+        #       by performing timed zoom operations and calculating zoom units/sec.
+        #       This would allow dynamic zoom speed calibration similar to pan/tilt calibration.
         num_steps = 30
         step_sizes = np.linspace(0, 1, num_steps)
         zoom_in_values = []
@@ -393,11 +502,38 @@ class PtzAutoTracker:
             self.config.cameras[camera].onvif.autotracking.zooming
             != ZoomingModeEnum.disabled
         ):
-            logger.info(f"Calibration for {camera} in progress: 0% complete")
+            # Skip zoom calibration for continuous mode without level reporting
+            if (self.config.cameras[camera].onvif.autotracking.zooming == ZoomingModeEnum.continuous
+                and camera in self.estimated_zoom_position):
+                # Internal tracking always uses normalized 0.0-1.0
+                self.ptz_metrics[camera].min_zoom.value = 0.0
+                self.ptz_metrics[camera].max_zoom.value = 1.0
 
-            for i in range(2):
-                # absolute move to 0 - fully zoomed out
-                await self.onvif._zoom_absolute(
+                if camera in self.native_zoom_range:
+                    min_native, max_native = self.native_zoom_range[camera]
+                    logger.info(
+                        f"{camera}: Skipping zoom calibration for continuous mode without level reporting. "
+                        f"Using native zoom range {min_native:.1f}x - {max_native:.1f}x"
+                    )
+                else:
+                    logger.info(
+                        f"{camera}: Skipping zoom calibration for continuous mode without level reporting. "
+                        f"Using default range 1x - 30x"
+                    )
+
+                # Log preset zoom level if configured
+                if self.config.cameras[camera].onvif.autotracking.preset_zoom_level is not None:
+                    native_preset = self.config.cameras[camera].onvif.autotracking.preset_zoom_level
+                    normalized_preset = self._native_to_normalized_zoom(camera, native_preset)
+                    logger.info(
+                        f"{camera}: Preset zoom level: {native_preset:.1f}x (normalized: {normalized_preset:.2f})"
+                    )
+            else:
+                logger.info(f"Calibration for {camera} in progress: 0% complete")
+
+                for i in range(2):
+                    # absolute move to 0 - fully zoomed out
+                    await self.onvif._zoom_absolute(
                     camera,
                     self.onvif.cams[camera]["absolute_zoom_range"]["XRange"]["Min"],
                     1,
@@ -634,11 +770,17 @@ class PtzAutoTracker:
         effective_distance = np.sqrt(pan_delta**2 + effective_tilt_delta**2)
 
         # Skip movement if too small (avoid micro-adjustments)
-        if effective_distance < 0.01:  # Less than 1% of FOV
+        if effective_distance < 0.05:
             logger.debug(f"{camera}: Distance {effective_distance:.4f} too small, skipping move")
             return 0.0, 0.0, 0.0
 
-        velocity_magnitude = 0.2 # use 20% of max speed
+        velocity_magnitude = 0.3
+        if effective_distance > 0.9:  # Large movement
+            velocity_magnitude = 0.5  # Move faster
+        elif effective_distance > 0.7:  # Medium movement
+            velocity_magnitude = 0.4  # Current speed
+        else:  # Small adjustment
+            velocity_magnitude = 0.3  # Move slower
 
         # Calculate duration: at this velocity, moving 'effective_distance' takes effective_distance/(speed * velocity_magnitude)
         duration = effective_distance / (speed * velocity_magnitude)
@@ -660,6 +802,42 @@ class PtzAutoTracker:
 
         return pan_velocity, tilt_velocity, duration
 
+    def _calculate_continuous_zoom_params(
+        self, camera: str, zoom_delta: float
+    ) -> tuple[float, float]:
+        """Calculate velocity and duration for continuous zoom based on zoom delta.
+
+        For cameras using continuous_timed mode with continuous zoom capability,
+        this converts a desired zoom change into velocity and duration parameters
+        for ContinuousZoom.
+        """
+        zoom_speed = self.continuous_zoom_speed[camera]
+
+        # Skip zoom if too small (avoid micro-adjustments)
+        if abs(zoom_delta) < 0.01:
+            logger.debug(f"{camera}: Zoom delta {zoom_delta:.4f} too small, skipping zoom")
+            return 0.0, 0.0
+
+        # Use a moderate velocity for smoother zoom
+        velocity_magnitude = 0.3  # Use 30% of max zoom speed
+
+        # Calculate duration based on zoom delta and configured speed
+        duration = abs(zoom_delta) / (zoom_speed * velocity_magnitude)
+
+        # Clamp duration to reasonable bounds
+        duration = np.clip(duration, 0.2, 2.0)  # Allow longer zoom durations
+
+        # Calculate zoom velocity (preserving direction)
+        zoom_velocity = np.sign(zoom_delta) * velocity_magnitude
+
+        logger.debug(
+            f"{camera}: ContinuousZoom params - "
+            f"zoom_delta={zoom_delta:.3f}, zoom_speed={zoom_speed:.3f}, "
+            f"velocity={zoom_velocity:.3f}, duration={duration:.3f}s"
+        )
+
+        return zoom_velocity, duration
+
     def _predict_movement_time(self, camera, pan, tilt):
         combined_movement = abs(pan) + abs(tilt)
         input_data = np.array([self.intercept[camera], combined_movement])
@@ -667,6 +845,8 @@ class PtzAutoTracker:
         return np.dot(self.move_coefficients[camera], input_data)
 
     def _predict_area_after_time(self, camera, time):
+        if "area_coefficients" not in self.tracked_object_metrics[camera]:
+            return 0  # No prediction available yet
         return np.dot(
             self.tracked_object_metrics[camera]["area_coefficients"],
             [self.tracked_object_history[camera][-1]["frame_time"] + time],
@@ -818,11 +998,45 @@ class PtzAutoTracker:
                                 while not self.ptz_metrics[camera].motor_stopped.is_set():
                                     await self.onvif.get_camera_status(camera)
 
-                            if (
-                                zoom > 0
-                                and self.ptz_metrics[camera].zoom_level.value != zoom
-                            ):
-                                await self.onvif._zoom_absolute(camera, zoom, 1)
+                            # Handle zoom based on configured mode
+                            if zoom != 0:
+                                zoom_mode = self.config.cameras[camera].onvif.autotracking.zooming
+                                if zoom_mode == ZoomingModeEnum.absolute:
+                                    if (
+                                        zoom > 0
+                                        and self.ptz_metrics[camera].zoom_level.value != zoom
+                                    ):
+                                        await self.onvif._zoom_absolute(camera, zoom, 1)
+                                elif zoom_mode == ZoomingModeEnum.continuous:
+                                    # For continuous zoom with RelativeMove cameras
+                                    if "zoom" in self.onvif.cams[camera]["features"]:
+                                        zoom_vel, zoom_duration = self._calculate_continuous_zoom_params(
+                                            camera, zoom
+                                        )
+                                        if zoom_duration > 0:
+                                            await self.onvif._zoom_continuous_timed(
+                                                camera, zoom_vel, zoom_duration
+                                            )
+
+                                            # Update estimated zoom position if we're tracking it
+                                            if camera in self.estimated_zoom_position:
+                                                position_delta = zoom_vel * zoom_duration * self.continuous_zoom_speed[camera]
+                                                old_position = self.estimated_zoom_position[camera]
+                                                # Clamp to normalized range (always 0.0-1.0)
+                                                self.estimated_zoom_position[camera] = np.clip(
+                                                    self.estimated_zoom_position[camera] + position_delta,
+                                                    0.0, 1.0
+                                                )
+
+                                                # Convert to native units for logging
+                                                old_native = self._normalized_to_native_zoom(camera, old_position)
+                                                new_native = self._normalized_to_native_zoom(camera, self.estimated_zoom_position[camera])
+
+                                                logger.debug(
+                                                    f"{camera}: Zoom position updated: "
+                                                    f"{old_native:.1f}x → {new_native:.1f}x "
+                                                    f"(normalized: {old_position:.3f} → {self.estimated_zoom_position[camera]:.3f})"
+                                                )
 
                     elif self.movement_mode[camera] == "continuous_timed":
                         if pan != 0 or tilt != 0:
@@ -839,16 +1053,69 @@ class PtzAutoTracker:
                                 while not self.ptz_metrics[camera].motor_stopped.is_set():
                                     await self.onvif.get_camera_status(camera)
 
-                        # Handle zoom separately if camera supports absolute zoom
-                        if (
-                            zoom > 0
-                            and "zoom-a" in self.onvif.cams[camera]["features"]
-                            and self.ptz_metrics[camera].zoom_level.value != zoom
-                        ):
-                            await self.onvif._zoom_absolute(camera, zoom, 1)
+                        # Handle zoom separately based on configured zoom mode
+                        if zoom != 0:
+                            zoom_mode = self.config.cameras[camera].onvif.autotracking.zooming
 
-                            while not self.ptz_metrics[camera].motor_stopped.is_set():
-                                await self.onvif.get_camera_status(camera)
+                            # Use the configured zoom mode
+                            if zoom_mode == ZoomingModeEnum.absolute:
+                                # Absolute zoom mode
+                                if (
+                                    zoom > 0
+                                    and "zoom-a" in self.onvif.cams[camera]["features"]
+                                    and self.ptz_metrics[camera].zoom_level.value != zoom
+                                ):
+                                    await self.onvif._zoom_absolute(camera, zoom, 1)
+
+                                    while not self.ptz_metrics[camera].motor_stopped.is_set():
+                                        await self.onvif.get_camera_status(camera)
+
+                            elif zoom_mode == ZoomingModeEnum.continuous:
+                                # Continuous zoom mode
+                                if "zoom" in self.onvif.cams[camera]["features"]:
+                                    # For continuous zoom, we treat the zoom value as a delta
+                                    zoom_vel, zoom_duration = self._calculate_continuous_zoom_params(
+                                        camera, zoom
+                                    )
+
+                                    if zoom_duration > 0:
+                                        # Check for Sunba quirks - some cameras need zoom sent separately
+                                        if (
+                                            self.config.cameras[camera].onvif.sunba_quirks
+                                            and "zoom-r" not in self.onvif.cams[camera]["features"]
+                                        ):
+                                            await self.onvif._zoom_continuous_timed(
+                                                camera, zoom_vel, zoom_duration
+                                            )
+                                        else:
+                                            # Most cameras can handle zoom with pan/tilt
+                                            # But since we're processing zoom after pan/tilt, send it separately
+                                            await self.onvif._zoom_continuous_timed(
+                                                camera, zoom_vel, zoom_duration
+                                            )
+
+                                        while not self.ptz_metrics[camera].motor_stopped.is_set():
+                                            await self.onvif.get_camera_status(camera)
+
+                                        # Update estimated zoom position if we're tracking it
+                                        if camera in self.estimated_zoom_position:
+                                            position_delta = zoom_vel * zoom_duration * self.continuous_zoom_speed[camera]
+                                            old_position = self.estimated_zoom_position[camera]
+                                            # Clamp to normalized range (always 0.0-1.0)
+                                            self.estimated_zoom_position[camera] = np.clip(
+                                                self.estimated_zoom_position[camera] + position_delta,
+                                                0.0, 1.0
+                                            )
+
+                                            # Convert to native units for logging
+                                            old_native = self._normalized_to_native_zoom(camera, old_position)
+                                            new_native = self._normalized_to_native_zoom(camera, self.estimated_zoom_position[camera])
+
+                                            logger.debug(
+                                                f"{camera}: Zoom position updated: "
+                                                f"{old_native:.1f}x → {new_native:.1f}x "
+                                                f"(normalized: {old_position:.3f} → {self.estimated_zoom_position[camera]:.3f})"
+                                            )
 
                     # Wait until the camera finishes moving
                     while not self.ptz_metrics[camera].motor_stopped.is_set():
@@ -1053,7 +1320,7 @@ class PtzAutoTracker:
         percentage = (
             0.08
             if camera_config.onvif.autotracking.movement_weights
-            and self.tracked_object_metrics[camera]["valid_velocity"]
+            and self.tracked_object_metrics[camera].get("valid_velocity", False)
             else 0.03
         )
         distance_threshold = percentage * max_frame * scaling_factor
@@ -1071,7 +1338,11 @@ class PtzAutoTracker:
         camera_height = camera_config.frame_shape[0]
         camera_fps = camera_config.detect.fps
 
-        average_velocity = self.tracked_object_metrics[camera]["velocity"]
+        # Get velocity from tracked_object_metrics if available, otherwise calculate it
+        if "velocity" not in self.tracked_object_metrics[camera]:
+            _, average_velocity = self._get_valid_velocity(camera, obj)
+        else:
+            average_velocity = self.tracked_object_metrics[camera]["velocity"]
 
         bb_left, bb_top, bb_right, bb_bottom = box
 
@@ -1089,9 +1360,9 @@ class PtzAutoTracker:
         touching_frame_edges = self._touching_frame_edges(camera, box)
 
         # make sure object is centered in the frame
-        below_distance_threshold = self.tracked_object_metrics[camera][
-            "below_distance_threshold"
-        ]
+        below_distance_threshold = self.tracked_object_metrics[camera].get(
+            "below_distance_threshold", False
+        )
 
         below_dimension_threshold = (bb_right - bb_left) <= camera_width * (
             self.zoom_factor[camera] + 0.1
@@ -1103,7 +1374,10 @@ class PtzAutoTracker:
             < np.tile([velocity_threshold_x, velocity_threshold_y], 2)
         ) or np.all(average_velocity == 0)
 
-        if not predicted_time:
+        if "target_box" not in self.tracked_object_metrics[camera]:
+            # Use max_target_box as default when target_box hasn't been calculated yet
+            calculated_target_box = self.tracked_object_metrics[camera]["max_target_box"]
+        elif not predicted_time:
             calculated_target_box = self.tracked_object_metrics[camera]["target_box"]
         else:
             calculated_target_box = self.tracked_object_metrics[camera][
@@ -1129,14 +1403,29 @@ class PtzAutoTracker:
             * AUTOTRACKING_ZOOM_IN_HYSTERESIS
         )
 
-        at_max_zoom = (
-            self.ptz_metrics[camera].zoom_level.value
-            == self.ptz_metrics[camera].max_zoom.value
-        )
-        at_min_zoom = (
-            self.ptz_metrics[camera].zoom_level.value
-            == self.ptz_metrics[camera].min_zoom.value
-        )
+        # Check zoom limits based on whether camera reports zoom level
+        if (camera_config.onvif.autotracking.zooming == ZoomingModeEnum.continuous and
+            camera in self.estimated_zoom_position):
+            # Use estimated position for continuous zoom without level reporting
+            # Use conservative buffer to avoid hitting hard stops (10% from limits)
+            estimated_pos = self.estimated_zoom_position[camera]
+            buffer = 0.1  # 10% buffer in normalized space
+            at_max_zoom = estimated_pos >= (1.0 - buffer)
+            at_min_zoom = estimated_pos <= buffer
+
+            if debug_zooming and camera in self.native_zoom_range:
+                native_pos = self._normalized_to_native_zoom(camera, estimated_pos)
+                logger.debug(f"{camera}: Estimated zoom position: {native_pos:.1f}x (normalized: {estimated_pos:.3f})")
+        else:
+            # Use actual reported zoom level for absolute/relative modes
+            at_max_zoom = (
+                self.ptz_metrics[camera].zoom_level.value
+                == self.ptz_metrics[camera].max_zoom.value
+            )
+            at_min_zoom = (
+                self.ptz_metrics[camera].zoom_level.value
+                == self.ptz_metrics[camera].min_zoom.value
+            )
 
         # debug zooming
         if debug_zooming:
@@ -1147,7 +1436,7 @@ class PtzAutoTracker:
                 f"{camera}: Zoom test: below distance threshold: {(below_distance_threshold)}"
             )
             logger.debug(
-                f"{camera}: Zoom test: below area threshold: {(below_area_threshold)} target: {self.tracked_object_metrics[camera]['target_box']}, calculated: {calculated_target_box}, max: {self.tracked_object_metrics[camera]['max_target_box']}"
+                f"{camera}: Zoom test: below area threshold: {(below_area_threshold)} target: {self.tracked_object_metrics[camera].get('target_box', 'not set')}, calculated: {calculated_target_box}, max: {self.tracked_object_metrics[camera]['max_target_box']}"
             )
             logger.debug(
                 f"{camera}: Zoom test: below dimension threshold: {below_dimension_threshold} width: {bb_right - bb_left}, max width: {camera_width * (self.zoom_factor[camera] + 0.1)}, height: {bb_bottom - bb_top}, max height: {camera_height * (self.zoom_factor[camera] + 0.1)}"
@@ -1158,10 +1447,10 @@ class PtzAutoTracker:
             logger.debug(f"{camera}: Zoom test: at max zoom: {at_max_zoom}")
             logger.debug(f"{camera}: Zoom test: at min zoom: {at_min_zoom}")
             logger.debug(
-                f"{camera}: Zoom test: zoom in hysteresis limit: {zoom_in_hysteresis} value: {AUTOTRACKING_ZOOM_IN_HYSTERESIS} original: {self.tracked_object_metrics[camera]['original_target_box']} max: {self.tracked_object_metrics[camera]['max_target_box']} target: {calculated_target_box if calculated_target_box else self.tracked_object_metrics[camera]['target_box']}"
+                f"{camera}: Zoom test: zoom in hysteresis limit: {zoom_in_hysteresis} value: {AUTOTRACKING_ZOOM_IN_HYSTERESIS} original: {self.tracked_object_metrics[camera].get('original_target_box', 'not set')} max: {self.tracked_object_metrics[camera]['max_target_box']} target: {calculated_target_box if calculated_target_box else self.tracked_object_metrics[camera].get('target_box', 'not set')}"
             )
             logger.debug(
-                f"{camera}: Zoom test: zoom out hysteresis limit: {zoom_out_hysteresis} value: {AUTOTRACKING_ZOOM_OUT_HYSTERESIS} original: {self.tracked_object_metrics[camera]['original_target_box']} max: {self.tracked_object_metrics[camera]['max_target_box']} target: {calculated_target_box if calculated_target_box else self.tracked_object_metrics[camera]['target_box']}"
+                f"{camera}: Zoom test: zoom out hysteresis limit: {zoom_out_hysteresis} value: {AUTOTRACKING_ZOOM_OUT_HYSTERESIS} original: {self.tracked_object_metrics[camera].get('original_target_box', 'not set')} max: {self.tracked_object_metrics[camera]['max_target_box']} target: {calculated_target_box if calculated_target_box else self.tracked_object_metrics[camera].get('target_box', 'not set')}"
             )
 
         # Zoom in conditions (and)
@@ -1359,7 +1648,7 @@ class PtzAutoTracker:
                         zoom = max(0.0, current_zoom_level - 2 * level)
 
         # relative zooming concurrently with pan/tilt
-        if camera_config.onvif.autotracking.zooming == ZoomingModeEnum.relative:
+        elif camera_config.onvif.autotracking.zooming == ZoomingModeEnum.relative:
             # this is our initial zoom in on a new object
             if "target_box" not in self.tracked_object_metrics[camera]:
                 zoom = target_box ** self.zoom_factor[camera]
@@ -1387,7 +1676,7 @@ class PtzAutoTracker:
                             camera, predicted_movement_time
                         ) / (camera_width * camera_height)
                         logger.debug(
-                            f"{camera}: Zooming prediction: predicted movement time: {predicted_movement_time}, original box: {self.tracked_object_metrics[camera]['target_box']}, calculated box: {calculated_target_box}"
+                            f"{camera}: Zooming prediction: predicted movement time: {predicted_movement_time}, original box: {self.tracked_object_metrics[camera].get('target_box', 'not set')}, calculated box: {calculated_target_box}"
                         )
                     else:
                         calculated_target_box = self.tracked_object_metrics[camera][
@@ -1408,6 +1697,38 @@ class PtzAutoTracker:
                     if result:
                         # zoom in
                         zoom = 1 - zoom if zoom > 0 else (zoom * 2 + 1)
+
+        # continuous zoom (velocity-based) for cameras without position control
+        elif camera_config.onvif.autotracking.zooming == ZoomingModeEnum.continuous:
+            # For continuous zoom, we calculate a delta value (-1 to 1)
+            # that will be converted to velocity and duration later
+            if (
+                result := self._should_zoom_in(
+                    camera,
+                    obj,
+                    obj.obj_data["box"],
+                    predicted_movement_time,
+                    debug_zoom,
+                )
+            ) is not None:
+                # Calculate zoom delta based on how far we are from target
+                if "target_box" not in self.tracked_object_metrics[camera]:
+                    # Initial zoom to frame the object
+                    zoom = 0.3 if result else -0.3
+                else:
+                    calculated_target_box = self.tracked_object_metrics[camera].get("target_box",
+                                                                                     self.tracked_object_metrics[camera]["max_target_box"])
+                    max_target_box = self.tracked_object_metrics[camera]["max_target_box"]
+
+                    # Calculate how much we need to zoom (0 to 1 scale)
+                    zoom_ratio = calculated_target_box / max_target_box
+
+                    if result:
+                        # Zoom in - stronger zoom when object is much smaller than target
+                        zoom = min(0.5, (1 - zoom_ratio) * 0.5)
+                    else:
+                        # Zoom out - stronger zoom when object is much larger than target
+                        zoom = -min(0.5, (zoom_ratio - 1) * 0.5)
 
         logger.debug(f"{camera}: Zooming: {result} Zoom amount: {zoom}")
 
@@ -1477,7 +1798,7 @@ class PtzAutoTracker:
                     self.ptz_metrics[camera].start_time.value,
                     self.ptz_metrics[camera].stop_time.value,
                 ):
-                    if self.tracked_object_metrics[camera]["below_distance_threshold"]:
+                    if self.tracked_object_metrics[camera].get("below_distance_threshold", False):
                         logger.debug(
                             f"{camera}: Existing object (do NOT move ptz): {obj.obj_data['id']} {obj.obj_data['box']} {obj.obj_data['frame_time']}"
                         )
@@ -1588,6 +1909,25 @@ class PtzAutoTracker:
             # update stored zoom level from preset
             while not self.ptz_metrics[camera].motor_stopped.is_set():
                 await self.onvif.get_camera_status(camera)
+
+            # Reset estimated zoom position for cameras that don't report zoom level
+            if camera in self.estimated_zoom_position:
+                # Reset to preset zoom level if configured, otherwise middle of range
+                if autotracker_config.preset_zoom_level is not None:
+                    # Convert native preset zoom to normalized position
+                    native_preset = autotracker_config.preset_zoom_level
+                    self.estimated_zoom_position[camera] = self._native_to_normalized_zoom(camera, native_preset)
+                    logger.debug(
+                        f"{camera}: Reset to preset at {native_preset:.1f}x zoom "
+                        f"(normalized position: {self.estimated_zoom_position[camera]:.2f})"
+                    )
+                else:
+                    # Reset to middle of normalized range
+                    self.estimated_zoom_position[camera] = 0.5
+                    native_middle = self._normalized_to_native_zoom(camera, 0.5)
+                    logger.debug(
+                        f"{camera}: Reset to middle position (normalized: 0.5, native: {native_middle:.1f}x)"
+                    )
 
             self.ptz_metrics[camera].tracking_active.clear()
             self.dispatcher.publish(

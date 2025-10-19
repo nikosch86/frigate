@@ -234,20 +234,27 @@ class OnvifController:
 
             # autotracking relative panning/tilting needs a relative zoom value set to 0
             # if camera supports relative movement
+            zoom_space_id = None
             if (
                 self.config.cameras[camera_name].onvif.autotracking.zooming
                 != ZoomingModeEnum.disabled
             ):
-                zoom_space_id = next(
-                    (
-                        i
-                        for i, space in enumerate(
-                            ptz_config.Spaces.RelativeZoomTranslationSpace
+                # Check if RelativeZoomTranslationSpace exists before trying to access it
+                if hasattr(ptz_config.Spaces, 'RelativeZoomTranslationSpace') and ptz_config.Spaces.RelativeZoomTranslationSpace:
+                    try:
+                        zoom_space_id = next(
+                            (
+                                i
+                                for i, space in enumerate(
+                                    ptz_config.Spaces.RelativeZoomTranslationSpace
+                                )
+                                if "TranslationGenericSpace" in space["URI"]
+                            ),
+                            None,
                         )
-                        if "TranslationGenericSpace" in space["URI"]
-                    ),
-                    None,
-                )
+                    except Exception as e:
+                        logger.debug(f"{camera_name}: No relative zoom space found: {e}")
+                        zoom_space_id = None
 
             # setup relative moving request for autotracking
             move_request = ptz.create_type("RelativeMove")
@@ -266,9 +273,21 @@ class OnvifController:
                     != ZoomingModeEnum.disabled
                 ):
                     if zoom_space_id is not None:
-                        move_request.Translation.Zoom.space = ptz_config["Spaces"][
-                            "RelativeZoomTranslationSpace"
-                        ][zoom_space_id]["URI"]
+                        # Check if Zoom exists in Translation before trying to access it
+                        if move_request.Translation is not None:
+                            if hasattr(move_request.Translation, 'Zoom') and move_request.Translation.Zoom is not None:
+                                move_request.Translation.Zoom.space = ptz_config["Spaces"][
+                                    "RelativeZoomTranslationSpace"
+                                ][zoom_space_id]["URI"]
+                            else:
+                                # Zoom doesn't exist, check if camera supports continuous zoom instead
+                                if "zoom" in [f.lower() for f in self.cams.get(camera_name, {}).get("features", [])]:
+                                    logger.info(
+                                        f"{camera_name}: Camera doesn't support relative zoom but has continuous zoom. "
+                                        "Will use continuous zoom for autotracking if absolute zoom is not available."
+                                    )
+                                else:
+                                    raise AttributeError("Camera doesn't support relative zoom and no continuous zoom available")
                 else:
                     if (
                         move_request["Translation"] is not None
@@ -284,12 +303,21 @@ class OnvifController:
                         f"{camera_name}: Relative move request after deleting zoom: {move_request}"
                     )
             except Exception as e:
-                self.config.cameras[
-                    camera_name
-                ].onvif.autotracking.zooming = ZoomingModeEnum.disabled
-                logger.warning(
-                    f"Disabling autotracking zooming for {camera_name}: Relative zoom not supported. Exception: {e}"
-                )
+                # Only disable zooming if the camera doesn't support any zoom method
+                if self.config.cameras[camera_name].onvif.autotracking.zooming == ZoomingModeEnum.relative:
+                    # Check if continuous zoom is available as fallback
+                    if configs.DefaultContinuousZoomVelocitySpace:
+                        logger.warning(
+                            f"{camera_name}: Relative zoom not supported, but continuous zoom is available. "
+                            f"Consider setting zooming mode to 'absolute' to enable zoom functionality."
+                        )
+                    else:
+                        self.config.cameras[
+                            camera_name
+                        ].onvif.autotracking.zooming = ZoomingModeEnum.disabled
+                        logger.warning(
+                            f"Disabling autotracking zooming for {camera_name}: Relative zoom not supported and no continuous zoom available. Exception: {e}"
+                        )
 
             if move_request.Speed is None:
                 move_request.Speed = configs.DefaultPTZSpeed if configs else None
@@ -384,6 +412,28 @@ class OnvifController:
             )
 
         self.cams[camera_name]["features"] = supported_features
+
+        # Validate continuous zoom mode configuration
+        if (
+            self.config.cameras[camera_name].onvif.autotracking.enabled_in_config
+            and self.config.cameras[camera_name].onvif.autotracking.enabled
+            and self.config.cameras[camera_name].onvif.autotracking.zooming
+            == ZoomingModeEnum.continuous
+        ):
+            # Check if camera supports continuous zoom
+            if "zoom" not in supported_features:
+                self.config.cameras[camera_name].onvif.autotracking.zooming = (
+                    ZoomingModeEnum.disabled
+                )
+                logger.warning(
+                    f"{camera_name}: Continuous zoom mode configured but not supported by camera. "
+                    "Disabling autotracking zooming."
+                )
+            else:
+                logger.info(
+                    f"{camera_name}: Continuous zoom mode enabled for autotracking."
+                )
+
         self.cams[camera_name]["init"] = True
         return True
 
@@ -1056,18 +1106,34 @@ class OnvifController:
                 self.config.cameras[camera_name].onvif.autotracking.zooming
                 != ZoomingModeEnum.disabled
             ):
-                # store absolute zoom level as 0 to 1 interpolated from the values of the camera
-                self.ptz_metrics[camera_name].zoom_level.value = numpy.interp(
-                    round(status.Position.Zoom.x, 2),
-                    [
-                        self.cams[camera_name]["absolute_zoom_range"]["XRange"]["Min"],
-                        self.cams[camera_name]["absolute_zoom_range"]["XRange"]["Max"],
-                    ],
-                    [0, 1],
-                )
-                logger.debug(
-                    f"{camera_name}: Camera zoom level: {self.ptz_metrics[camera_name].zoom_level.value}"
-                )
+                # Try to get absolute zoom level if camera supports it
+                try:
+                    if (
+                        hasattr(status, 'Position')
+                        and hasattr(status.Position, 'Zoom')
+                        and status.Position.Zoom is not None
+                        and "absolute_zoom_range" in self.cams[camera_name]
+                    ):
+                        # store absolute zoom level as 0 to 1 interpolated from the values of the camera
+                        self.ptz_metrics[camera_name].zoom_level.value = numpy.interp(
+                            round(status.Position.Zoom.x, 2),
+                            [
+                                self.cams[camera_name]["absolute_zoom_range"]["XRange"]["Min"],
+                                self.cams[camera_name]["absolute_zoom_range"]["XRange"]["Max"],
+                            ],
+                            [0, 1],
+                        )
+                        logger.debug(
+                            f"{camera_name}: Camera zoom level: {self.ptz_metrics[camera_name].zoom_level.value}"
+                        )
+                    else:
+                        # Camera doesn't report zoom position (likely only has continuous zoom)
+                        # Keep the default value (0.5) or last known value
+                        logger.debug(
+                            f"{camera_name}: Camera doesn't report absolute zoom position, using default/last known value"
+                        )
+                except Exception as e:
+                    logger.debug(f"{camera_name}: Unable to get zoom position: {e}")
 
             # some hikvision cams won't update MoveStatus, so warn if it hasn't changed
             if (
