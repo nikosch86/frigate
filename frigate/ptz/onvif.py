@@ -145,7 +145,7 @@ class OnvifController:
 
         try:
             profiles = await media.GetProfiles()
-            # logger.debug(f"Onvif profiles for {camera_name}: {profiles}")
+            logger.debug(f"Onvif profiles for {camera_name}: {profiles}")
         except (Fault, ONVIFError, TransportError, Exception) as e:
             logger.error(
                 f"Unable to get Onvif media profiles for camera: {camera_name}: {e}"
@@ -166,7 +166,7 @@ class OnvifController:
             ):
                 # use the first profile that has a valid ptz configuration
                 profile = onvif_profile
-                # logger.debug(f"Selected Onvif profile for {camera_name}: {profile}")
+                logger.debug(f"Selected Onvif profile for {camera_name}: {profile}")
                 break
 
         if profile is None:
@@ -178,9 +178,9 @@ class OnvifController:
         # get the PTZ config for the profile
         try:
             configs = profile.PTZConfiguration
-            # logger.debug(
-            #     f"Onvif ptz config for media profile in {camera_name}: {configs}"
-            # )
+            logger.debug(
+                f"Onvif ptz config for media profile in {camera_name}: {configs}"
+            )
         except Exception as e:
             logger.error(
                 f"Invalid Onvif PTZ configuration for camera: {camera_name}: {e}"
@@ -203,7 +203,7 @@ class OnvifController:
             request = ptz.create_type("GetConfigurationOptions")
             request.ConfigurationToken = profile.PTZConfiguration.token
             ptz_config = await ptz.GetConfigurationOptions(request)
-            # logger.debug(f"Onvif config for {camera_name}: {ptz_config}")
+            logger.debug(f"Onvif config for {camera_name}: {ptz_config}")
 
             service_capabilities_request = ptz.create_type("GetServiceCapabilities")
             self.cams[camera_name]["service_capabilities_request"] = (
@@ -227,7 +227,7 @@ class OnvifController:
             self.cams[camera_name]["status_request"] = status_request
             try:
                 status = await ptz.GetStatus(status_request)
-                # logger.debug(f"Onvif status config for {camera_name}: {status}")
+                logger.debug(f"Onvif status config for {camera_name}: {status}")
             except Exception as e:
                 logger.warning(f"Unable to get status from camera: {camera_name}: {e}")
                 status = None
@@ -239,7 +239,6 @@ class OnvifController:
                 self.config.cameras[camera_name].onvif.autotracking.zooming
                 != ZoomingModeEnum.disabled
             ):
-                # Check if RelativeZoomTranslationSpace exists before trying to access it
                 if hasattr(ptz_config.Spaces, 'RelativeZoomTranslationSpace') and ptz_config.Spaces.RelativeZoomTranslationSpace:
                     try:
                         zoom_space_id = next(
@@ -273,14 +272,12 @@ class OnvifController:
                     != ZoomingModeEnum.disabled
                 ):
                     if zoom_space_id is not None:
-                        # Check if Zoom exists in Translation before trying to access it
                         if move_request.Translation is not None:
                             if hasattr(move_request.Translation, 'Zoom') and move_request.Translation.Zoom is not None:
                                 move_request.Translation.Zoom.space = ptz_config["Spaces"][
                                     "RelativeZoomTranslationSpace"
                                 ][zoom_space_id]["URI"]
                             else:
-                                # Zoom doesn't exist, check if camera supports continuous zoom instead
                                 if "zoom" in [f.lower() for f in self.cams.get(camera_name, {}).get("features", [])]:
                                     logger.info(
                                         f"{camera_name}: Camera doesn't support relative zoom but has continuous zoom. "
@@ -303,9 +300,7 @@ class OnvifController:
                         f"{camera_name}: Relative move request after deleting zoom: {move_request}"
                     )
             except Exception as e:
-                # Only disable zooming if the camera doesn't support any zoom method
                 if self.config.cameras[camera_name].onvif.autotracking.zooming == ZoomingModeEnum.relative:
-                    # Check if continuous zoom is available as fallback
                     if configs.DefaultContinuousZoomVelocitySpace:
                         logger.warning(
                             f"{camera_name}: Relative zoom not supported, but continuous zoom is available. "
@@ -413,14 +408,12 @@ class OnvifController:
 
         self.cams[camera_name]["features"] = supported_features
 
-        # Validate continuous zoom mode configuration
         if (
             self.config.cameras[camera_name].onvif.autotracking.enabled_in_config
             and self.config.cameras[camera_name].onvif.autotracking.enabled
             and self.config.cameras[camera_name].onvif.autotracking.zooming
             == ZoomingModeEnum.continuous
         ):
-            # Check if camera supports continuous zoom
             if "zoom" not in supported_features:
                 self.config.cameras[camera_name].onvif.autotracking.zooming = (
                     ZoomingModeEnum.disabled
@@ -641,7 +634,6 @@ class OnvifController:
         ].frame_time.value
         self.ptz_metrics[camera_name].stop_time.value = 0
 
-        # Apply Sunba speed swap workaround if needed
         corrected_pan, corrected_tilt = self._apply_sunba_speed_swap(
             camera_name, pan_velocity, tilt_velocity
         )
@@ -657,10 +649,8 @@ class OnvifController:
         try:
             await self.cams[camera_name]["ptz"].ContinuousMove(move_request)
 
-            # Wait for calculated duration
             await asyncio.sleep(duration)
 
-            # Stop movement
             await self._stop(camera_name)
 
             # For Sunba cameras, GetStatus is unreliable, so manually set motor_stopped
@@ -1106,7 +1096,6 @@ class OnvifController:
                 self.config.cameras[camera_name].onvif.autotracking.zooming
                 != ZoomingModeEnum.disabled
             ):
-                # Try to get absolute zoom level if camera supports it
                 try:
                     if (
                         hasattr(status, 'Position')
@@ -1127,8 +1116,6 @@ class OnvifController:
                             f"{camera_name}: Camera zoom level: {self.ptz_metrics[camera_name].zoom_level.value}"
                         )
                     else:
-                        # Camera doesn't report zoom position (likely only has continuous zoom)
-                        # Keep the default value (0.5) or last known value
                         logger.debug(
                             f"{camera_name}: Camera doesn't report absolute zoom position, using default/last known value"
                         )
