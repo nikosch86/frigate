@@ -20,7 +20,7 @@ import ImageLoadingIndicator from "../indicators/ImageLoadingIndicator";
 import useContextMenu from "@/hooks/use-contextmenu";
 import ActivityIndicator from "../indicators/activity-indicator";
 import { TimeRange } from "@/types/timeline";
-import { capitalizeFirstLetter, capitalizeAll } from "@/utils/stringUtil";
+import { capitalizeAll } from "@/utils/stringUtil";
 import { cn } from "@/lib/utils";
 import { InProgressPreview, VideoPreview } from "../preview/ScrubbablePreview";
 import { Preview } from "@/types/preview";
