@@ -16,7 +16,7 @@ import {
 } from "@/types/live";
 import { getIconForLabel } from "@/utils/iconUtil";
 import Chip from "../indicators/Chip";
-import { capitalizeFirstLetter, capitalizeAll } from "@/utils/stringUtil";
+import { capitalizeAll } from "@/utils/stringUtil";
 import { cn } from "@/lib/utils";
 import { TbExclamationCircle } from "react-icons/tb";
 import { TooltipPortal } from "@radix-ui/react-tooltip";
