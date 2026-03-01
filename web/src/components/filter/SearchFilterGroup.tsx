@@ -24,9 +24,9 @@ import PlatformAwareDialog from "../overlay/dialog/PlatformAwareDialog";
 import SearchFilterDialog from "../overlay/dialog/SearchFilterDialog";
 import { CalendarRangeFilterButton } from "./CalendarFilterButton";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-
 import { useTranslation } from "react-i18next";
 import { getTranslatedLabel } from "@/utils/i18n";
+import { useAllowedCameras } from "@/hooks/use-allowed-cameras";
 
 type SearchFilterGroupProps = {
   className: string;
@@ -46,6 +46,7 @@ export default function SearchFilterGroup({
   const { data: config } = useSWR<FrigateConfig>("config", {
     revalidateOnFocus: false,
   });
+  const allowedCameras = useAllowedCameras();
 
   const allLabels = useMemo<string[]>(() => {
     if (filterList?.labels) {
@@ -57,7 +58,9 @@ export default function SearchFilterGroup({
     }
 
     const labels = new Set<string>();
-    const cameras = filter?.cameras || Object.keys(config.cameras);
+    const cameras = (filter?.cameras || allowedCameras).filter((camera) =>
+      allowedCameras.includes(camera),
+    );
 
     cameras.forEach((camera) => {
       if (camera == "birdseye") {
@@ -87,7 +90,7 @@ export default function SearchFilterGroup({
     });
 
     return [...labels].sort();
-  }, [config, filterList, filter]);
+  }, [config, filterList, filter, allowedCameras]);
 
   const allZones = useMemo<string[]>(() => {
     if (filterList?.zones) {
@@ -99,7 +102,9 @@ export default function SearchFilterGroup({
     }
 
     const zones = new Set<string>();
-    const cameras = filter?.cameras || Object.keys(config.cameras);
+    const cameras = (filter?.cameras || allowedCameras).filter((camera) =>
+      allowedCameras.includes(camera),
+    );
 
     cameras.forEach((camera) => {
       if (camera == "birdseye") {
@@ -118,16 +123,16 @@ export default function SearchFilterGroup({
     });
 
     return [...zones].sort();
-  }, [config, filterList, filter]);
+  }, [config, filterList, filter, allowedCameras]);
 
   const filterValues = useMemo(
     () => ({
-      cameras: Object.keys(config?.cameras || {}),
+      cameras: allowedCameras,
       labels: Object.values(allLabels || {}),
       zones: Object.values(allZones || {}),
       search_type: ["thumbnail", "description"] as SearchSource[],
     }),
-    [config, allLabels, allZones],
+    [allLabels, allZones, allowedCameras],
   );
 
   const availableSortTypes = useMemo(() => {
@@ -246,10 +251,29 @@ function GeneralFilterButton({
   updateLabelFilter,
 }: GeneralFilterButtonProps) {
   const { t } = useTranslation(["components/filter"]);
+  const { data: config } = useSWR<FrigateConfig>("config", {
+    revalidateOnFocus: false,
+  });
   const [open, setOpen] = useState(false);
   const [currentLabels, setCurrentLabels] = useState<string[] | undefined>(
     selectedLabels,
   );
+
+  const allAudioListenLabels = useMemo<Set<string>>(() => {
+    if (!config) {
+      return new Set<string>();
+    }
+
+    const labels = new Set<string>();
+    Object.values(config.cameras).forEach((camera) => {
+      if (camera?.audio?.enabled) {
+        camera.audio.listen.forEach((label) => {
+          labels.add(label);
+        });
+      }
+    });
+    return labels;
+  }, [config]);
 
   const buttonText = useMemo(() => {
     if (isMobile) {
@@ -261,13 +285,17 @@ function GeneralFilterButton({
     }
 
     if (selectedLabels.length == 1) {
-      return getTranslatedLabel(selectedLabels[0]);
+      const label = selectedLabels[0];
+      return getTranslatedLabel(
+        label,
+        allAudioListenLabels.has(label) ? "audio" : "object",
+      );
     }
 
     return t("labels.count", {
       count: selectedLabels.length,
     });
-  }, [selectedLabels, t]);
+  }, [selectedLabels, allAudioListenLabels, t]);
 
   // ui
 
@@ -309,11 +337,10 @@ function GeneralFilterButton({
     <PlatformAwareDialog
       trigger={trigger}
       content={content}
-      contentClassName={
-        isDesktop
-          ? "scrollbar-container h-auto max-h-[80dvh] overflow-y-auto"
-          : "max-h-[75dvh] overflow-hidden p-4"
-      }
+      contentClassName={cn(
+        "scrollbar-container h-auto overflow-y-auto",
+        isDesktop ? "max-h-[80dvh]" : "px-4",
+      )}
       open={open}
       onOpenChange={(open) => {
         if (!open) {
@@ -343,6 +370,26 @@ export function GeneralFilterContent({
   onClose,
 }: GeneralFilterContentProps) {
   const { t } = useTranslation(["components/filter"]);
+  const { data: config } = useSWR<FrigateConfig>("config", {
+    revalidateOnFocus: false,
+  });
+
+  const allAudioListenLabels = useMemo<string[]>(() => {
+    if (!config) {
+      return [];
+    }
+
+    const labels = new Set<string>();
+    Object.values(config.cameras).forEach((camera) => {
+      if (camera?.audio?.enabled) {
+        camera.audio.listen.forEach((label) => {
+          labels.add(label);
+        });
+      }
+    });
+    return [...labels].sort();
+  }, [config]);
+
   return (
     <>
       <div className="overflow-x-hidden">
@@ -368,7 +415,10 @@ export function GeneralFilterContent({
           {allLabels.map((item) => (
             <FilterSwitch
               key={item}
-              label={getTranslatedLabel(item)}
+              label={getTranslatedLabel(
+                item,
+                allAudioListenLabels.includes(item) ? "audio" : "object",
+              )}
               isChecked={currentLabels?.includes(item) ?? false}
               onCheckedChange={(isChecked) => {
                 if (isChecked) {
@@ -482,11 +532,10 @@ function SortTypeButton({
     <PlatformAwareDialog
       trigger={trigger}
       content={content}
-      contentClassName={
-        isDesktop
-          ? "scrollbar-container h-auto max-h-[80dvh] overflow-y-auto"
-          : "max-h-[75dvh] overflow-hidden p-4"
-      }
+      contentClassName={cn(
+        "scrollbar-container h-auto overflow-y-auto",
+        isDesktop ? "max-h-[80dvh]" : "px-4",
+      )}
       open={open}
       onOpenChange={(open) => {
         if (!open) {
@@ -544,9 +593,8 @@ export function SortTypeContent({
             className="w-full space-y-1"
           >
             {availableSortTypes.map((value) => (
-              <div className="flex flex-row gap-2">
+              <div key={value} className="flex flex-row gap-2">
                 <RadioGroupItem
-                  key={value}
                   value={value}
                   id={`sort-${value}`}
                   className={

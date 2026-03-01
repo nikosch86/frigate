@@ -42,7 +42,8 @@
       "inferenceSpeed": "Velocidad de inferencia del detector",
       "cpuUsage": "Uso de CPU del Detector",
       "memoryUsage": "Uso de Memoria del Detector",
-      "temperature": "Detector de Temperatura"
+      "temperature": "Detector de Temperatura",
+      "cpuUsageInformation": "CPU utilizado para preparar los datos de entrada y salida desde/hacia la detección del modelo. Este valor no mide el uso de inferencia, incluso si se está utilizando una GPU o un acelerador."
     },
     "hardwareInfo": {
       "title": "Información de Hardware",
@@ -75,12 +76,24 @@
       },
       "gpuMemory": "Memoria de GPU",
       "npuMemory": "Memoria de NPU",
-      "npuUsage": "Uso de NPU"
+      "npuUsage": "Uso de NPU",
+      "intelGpuWarning": {
+        "title": "Aviso de estadísticas Intel GPU",
+        "message": "Estadísticas de GPU no disponibles",
+        "description": "Este es un error conocido en las herramientas de informes de estadísticas de GPU de Intel (intel_gpu_top). El error se produce y muestra repetidamente un uso de GPU del 0 %, incluso cuando la aceleración de hardware y la detección de objetos se ejecutan correctamente en la (i)GPU. No se trata de un error de Frigate. Puede reiniciar el host para solucionar el problema temporalmente y confirmar que la GPU funciona correctamente. Esto no afecta al rendimiento."
+      }
     },
     "otherProcesses": {
       "title": "Otros Procesos",
       "processCpuUsage": "Uso de CPU del Proceso",
-      "processMemoryUsage": "Uso de Memoria del Proceso"
+      "processMemoryUsage": "Uso de Memoria del Proceso",
+      "series": {
+        "go2rtc": "go2rtc",
+        "recording": "grabación",
+        "review_segment": "revisar segmento",
+        "embeddings": "embeddings",
+        "audio_detector": "detector de audio"
+      }
     }
   },
   "storage": {
@@ -102,6 +115,10 @@
       "title": "Almacenamiento de la Cámara",
       "storageUsed": "Almacenamiento",
       "unusedStorageInformation": "Información de Almacenamiento No Utilizado"
+    },
+    "shm": {
+      "title": "Asignación de SHM (memoria compartida)",
+      "warning": "El tamaño actual de SHM de {{total}}MB es muy pequeño. Aumente al menos a {{min_shm}}MB."
     }
   },
   "cameras": {
@@ -164,9 +181,19 @@
       "plate_recognition": "Reconocimiento de Matrículas",
       "yolov9_plate_detection": "Detección de Matrículas YOLOv9",
       "image_embedding": "Incrustación de Imágenes",
-      "yolov9_plate_detection_speed": "Velocidad de Detección de Matrículas YOLOv9"
+      "yolov9_plate_detection_speed": "Velocidad de Detección de Matrículas YOLOv9",
+      "review_description": "Revisión de descripción",
+      "review_description_speed": "Velocidad de revisión de la descripción",
+      "review_description_events_per_second": "Revisión de la descripción",
+      "object_description": "Descripción de Objeto",
+      "object_description_speed": "Velocidad de descripción de objeto",
+      "object_description_events_per_second": "Descripción de objeto",
+      "classification": "Clasificación de {{name}}",
+      "classification_speed": "Velocidad de clasificación de {{name}}",
+      "classification_events_per_second": "Clasificacion de eventos por segundo de {{name}}"
     },
-    "title": "Enriquecimientos"
+    "title": "Enriquecimientos",
+    "averageInf": "Tiempo promedio de inferencia"
   },
   "stats": {
     "ffmpegHighCpuUsage": "{{camera}} tiene un uso elevado de CPU por FFmpeg ({{ffmpegAvg}}%)",
@@ -175,6 +202,7 @@
     "reindexingEmbeddings": "Reindexando incrustaciones ({{processed}}% completado)",
     "detectIsSlow": "{{detect}} es lento ({{speed}} ms)",
     "cameraIsOffline": "{{camera}} está desconectada",
-    "detectIsVerySlow": "{{detect}} es muy lento ({{speed}} ms)"
+    "detectIsVerySlow": "{{detect}} es muy lento ({{speed}} ms)",
+    "shmTooLow": "Asignación de /dev/shm ({{total}} MB) debe aumentarse al menos a {{min}} MB."
   }
 }

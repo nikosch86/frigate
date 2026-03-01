@@ -6,9 +6,9 @@
     "last7": "Ostatnie 7 dni",
     "last14": "Ostatnie 14 dni",
     "last30": "Ostatnie 30 dni",
-    "thisWeek": "Ten tydzień",
+    "thisWeek": "W tym tygodniu",
     "lastWeek": "Ostatni tydzień",
-    "thisMonth": "Ten miesiąc",
+    "thisMonth": "W tym miesiącu",
     "lastMonth": "Ostatni miesiąc",
     "5minutes": "5 minut",
     "10minutes": "10 minut",
@@ -17,23 +17,23 @@
     "untilForRestart": "Do czasu restartu Frigate.",
     "untilRestart": "Do restartu",
     "ago": "{{timeAgo}} temu",
-    "justNow": "Właśnie teraz",
+    "justNow": "W tej chwili",
     "today": "Dzisiaj",
     "yesterday": "Wczoraj",
-    "pm": "po południu",
-    "am": "przed południem",
-    "yr": "{{time}}r.",
+    "pm": "pm",
+    "am": "am",
+    "yr": "{{time}}r",
     "year_one": "{{time}} rok",
     "year_few": "{{time}} lata",
     "year_many": "{{time}} lat",
-    "mo": "{{time}}m.",
-    "d": "{{time}}d.",
+    "mo": "{{time}}m",
+    "d": "{{time}}d",
     "day_one": "{{time}} dzień",
     "day_few": "{{time}} dni",
     "day_many": "{{time}} dni",
-    "h": "{{time}}godz.",
-    "m": "{{time}}min.",
-    "s": "{{time}}s.",
+    "h": "{{time}}godz",
+    "m": "{{time}}min",
+    "s": "{{time}}s",
     "month_one": "{{time}} miesiąc",
     "month_few": "{{time}} miesiące",
     "month_many": "{{time}} miesięcy",
@@ -87,7 +87,11 @@
     "formattedTimestampMonthDayYear": {
       "12hour": "d MMMM yyyy",
       "24hour": "d MMMM yyyy"
-    }
+    },
+    "inProgress": "W trakcie",
+    "invalidStartTime": "Nieprawidłowy czas rozpoczęcia",
+    "invalidEndTime": "Nieprawidłowy czas zakończenia",
+    "never": "Nigdy"
   },
   "unit": {
     "speed": {
@@ -97,10 +101,24 @@
     "length": {
       "feet": "stopy",
       "meters": "metry"
+    },
+    "data": {
+      "kbps": "kB/s",
+      "mbps": "MB/s",
+      "gbps": "GB/s",
+      "kbph": "kB/godz",
+      "mbph": "MB/h",
+      "gbph": "GB/h"
     }
   },
   "label": {
-    "back": "Wróć"
+    "back": "Wróć",
+    "hide": "Ukryj {{item}}",
+    "show": "Pokaż {{item}}",
+    "ID": "ID",
+    "none": "Brak",
+    "all": "Wszystko",
+    "other": "Inne"
   },
   "button": {
     "apply": "Zastosuj",
@@ -137,7 +155,8 @@
     "cameraAudio": "Dźwięk kamery",
     "off": "WYŁĄCZ",
     "edit": "Edytuj",
-    "copyCoordinates": "Kopiuj współrzędne"
+    "copyCoordinates": "Kopiuj współrzędne",
+    "continue": "Kontynuuj"
   },
   "menu": {
     "system": "System",
@@ -179,7 +198,16 @@
       "fi": "Suomi (Fiński)",
       "yue": "粵語 (Kantoński)",
       "th": "ไทย (Tajski)",
-      "ca": "Català (Kataloński)"
+      "ca": "Català (Kataloński)",
+      "ptBR": "Português brasileiro (portugalski - Brazylia)",
+      "sr": "Српски (Serbski)",
+      "sl": "Slovenščina (Słowacki)",
+      "lt": "Lietuvių (Litewski)",
+      "bg": "Български (Bułgarski)",
+      "gl": "Galego (Galicyjski)",
+      "id": "Bahasa Indonesia (Indonezyjski)",
+      "ur": "اردو (Urdu)",
+      "hr": "Hrvatski (Chorwacki)"
     },
     "appearance": "Wygląd",
     "darkMode": {
@@ -231,7 +259,8 @@
     "configurationEditor": "Edytor konfiguracji",
     "help": "Pomoc",
     "settings": "Ustawienia",
-    "export": "Eksportuj"
+    "export": "Eksportuj",
+    "classification": "Klasyfikacja"
   },
   "role": {
     "viewer": "Przeglądający",
@@ -271,5 +300,18 @@
       },
       "title": "Zapisz"
     }
+  },
+  "readTheDocumentation": "Przeczytaj dokumentację",
+  "information": {
+    "pixels": "{{area}}px"
+  },
+  "list": {
+    "two": "{{0}} i {{1}}",
+    "many": "{{items}}, oraz {{last}}",
+    "separatorWithSpace": "; "
+  },
+  "field": {
+    "optional": "Opcjonalny",
+    "internalID": "Wewnętrzny identyfikator używany przez Frigate w konfiguracji i bazie danych"
   }
 }

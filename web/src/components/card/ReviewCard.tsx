@@ -6,7 +6,7 @@ import { getIconForLabel } from "@/utils/iconUtil";
 import { isDesktop, isIOS, isSafari } from "react-device-detect";
 import useSWR from "swr";
 import TimeAgo from "../dynamic/TimeAgo";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import useImageLoaded from "@/hooks/use-image-loaded";
 import ImageLoadingIndicator from "../indicators/ImageLoadingIndicator";
 import { FaCompactDisc } from "react-icons/fa";
@@ -33,18 +33,23 @@ import axios from "axios";
 import { toast } from "sonner";
 import useKeyboardListener from "@/hooks/use-keyboard-listener";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { capitalizeFirstLetter } from "@/utils/stringUtil";
-import { buttonVariants } from "../ui/button";
+import { Button, buttonVariants } from "../ui/button";
 import { Trans, useTranslation } from "react-i18next";
+import { cn } from "@/lib/utils";
+import { LuCircle } from "react-icons/lu";
+import { MdAutoAwesome } from "react-icons/md";
+import { GenAISummaryDialog } from "../overlay/chip/GenAISummaryChip";
+import { getTranslatedLabel } from "@/utils/i18n";
+import { formatList } from "@/utils/stringUtil";
 
 type ReviewCardProps = {
   event: ReviewSegment;
-  currentTime: number;
+  activeReviewItem?: ReviewSegment;
   onClick?: () => void;
 };
 export default function ReviewCard({
   event,
-  currentTime,
+  activeReviewItem,
   onClick,
 }: ReviewCardProps) {
   const { t } = useTranslation(["components/dialog"]);
@@ -56,12 +61,6 @@ export default function ReviewCard({
       ? t("time.formattedTimestampHourMinute.24hour", { ns: "common" })
       : t("time.formattedTimestampHourMinute.12hour", { ns: "common" }),
     config?.ui.timezone,
-  );
-  const isSelected = useMemo(
-    () =>
-      event.start_time <= currentTime &&
-      (event.end_time ?? Date.now() / 1000) >= currentTime,
-    [event, currentTime],
   );
 
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -88,6 +87,11 @@ export default function ReviewCard({
         if (response.status == 200) {
           toast.success(t("export.toast.success"), {
             position: "top-center",
+            action: (
+              <a href="/export" target="_blank" rel="noopener noreferrer">
+                <Button>{t("export.toast.view")}</Button>
+              </a>
+            ),
           });
         }
       })
@@ -109,6 +113,7 @@ export default function ReviewCard({
 
   useKeyboardListener(["Shift"], (_, modifiers) => {
     bypassDialogRef.current = modifiers.shift;
+    return false;
   });
 
   const handleDelete = useCallback(() => {
@@ -118,6 +123,12 @@ export default function ReviewCard({
       setDeleteDialogOpen(true);
     }
   }, [bypassDialogRef, onDelete]);
+
+  const getEventType = (text: string) => {
+    if (event.data.sub_labels?.includes(text)) return "manual";
+    if (event.data.audio.includes(text)) return "audio";
+    return "object";
+  };
 
   const content = (
     <div
@@ -138,7 +149,12 @@ export default function ReviewCard({
       />
       <img
         ref={imgRef}
-        className={`size-full rounded-lg ${isSelected ? "outline outline-[3px] outline-offset-1 outline-selected" : ""} ${imgLoaded ? "visible" : "invisible"}`}
+        className={cn(
+          "size-full rounded-lg",
+          activeReviewItem?.id == event.id &&
+            "outline outline-[3px] -outline-offset-[2.8px] outline-selected duration-200",
+          imgLoaded ? "visible" : "invisible",
+        )}
         src={`${baseUrl}${event.thumb_path.replace("/media/frigate/", "")}`}
         loading={isSafari ? "eager" : "lazy"}
         style={
@@ -157,39 +173,51 @@ export default function ReviewCard({
       <div className="flex items-center justify-between">
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center justify-evenly gap-1">
-              <>
-                {event.data.objects.map((object) => {
-                  return getIconForLabel(
-                    object,
-                    "size-3 text-primary dark:text-white",
-                  );
-                })}
-                {event.data.audio.map((audio) => {
-                  return getIconForLabel(
-                    audio,
-                    "size-3 text-primary dark:text-white",
-                  );
-                })}
-              </>
+            <div className="flex items-center gap-2">
+              <LuCircle
+                className={cn(
+                  "size-2",
+                  event.severity == "alert"
+                    ? "fill-severity_alert text-severity_alert"
+                    : "fill-severity_detection text-severity_detection",
+                )}
+              />
+              <div className="flex items-center gap-1">
+                {event.data.objects.map((object, idx) => (
+                  <div
+                    key={`${object}-${idx}`}
+                    className="rounded-full bg-muted-foreground p-1"
+                  >
+                    {getIconForLabel(object, "object", "size-3 text-white")}
+                  </div>
+                ))}
+                {event.data.audio.map((audio, idx) => (
+                  <div
+                    key={`${audio}-${idx}`}
+                    className="rounded-full bg-muted-foreground p-1"
+                  >
+                    {getIconForLabel(audio, "audio", "size-3 text-white")}
+                  </div>
+                ))}
+              </div>
               <div className="font-extra-light text-xs">{formattedDate}</div>
             </div>
           </TooltipTrigger>
           <TooltipContent className="smart-capitalize">
-            {[
-              ...new Set([
-                ...(event.data.objects || []),
-                ...(event.data.sub_labels || []),
-                ...(event.data.audio || []),
-              ]),
-            ]
-              .filter(
-                (item) => item !== undefined && !item.includes("-verified"),
-              )
-              .map((text) => capitalizeFirstLetter(text))
-              .sort()
-              .join(", ")
-              .replaceAll("-verified", "")}
+            {formatList(
+              [
+                ...new Set([
+                  ...(event.data.objects || []),
+                  ...(event.data.sub_labels || []),
+                  ...(event.data.audio || []),
+                ]),
+              ]
+                .filter(
+                  (item) => item !== undefined && !item.includes("-verified"),
+                )
+                .map((text) => getTranslatedLabel(text, getEventType(text)))
+                .sort(),
+            )}
           </TooltipContent>
         </Tooltip>
         <TimeAgo
@@ -198,6 +226,16 @@ export default function ReviewCard({
           dense
         />
       </div>
+      {event.data.metadata?.title && (
+        <GenAISummaryDialog review={event}>
+          <div className="flex items-center gap-1.5 rounded bg-secondary/50 hover:underline">
+            <MdAutoAwesome className="size-3 shrink-0 text-primary" />
+            <span className="truncate text-xs text-primary">
+              {event.data.metadata.title}
+            </span>
+          </div>
+        </GenAISummaryDialog>
+      )}
     </div>
   );
 

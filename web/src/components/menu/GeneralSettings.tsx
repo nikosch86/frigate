@@ -42,12 +42,20 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { isDesktop, isMobile } from "react-device-detect";
-import { Drawer, DrawerContent, DrawerTrigger } from "../ui/drawer";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerTitle,
+  DrawerTrigger,
+} from "../ui/drawer";
 import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogPortal,
+  DialogTitle,
   DialogTrigger,
 } from "../ui/dialog";
 import { TooltipPortal } from "@radix-ui/react-tooltip";
@@ -65,6 +73,7 @@ import { useTranslation } from "react-i18next";
 import { supportedLanguageKeys } from "@/lib/const";
 
 import { useDocDomain } from "@/hooks/use-doc-domain";
+import { MdCategory } from "react-icons/md";
 
 type GeneralSettingsProps = {
   className?: string;
@@ -115,13 +124,22 @@ export default function GeneralSettings({ className }: GeneralSettingsProps) {
   const SubItemContent = isDesktop ? DropdownMenuSubContent : DialogContent;
   const Portal = isDesktop ? DropdownMenuPortal : DialogPortal;
 
-  const handlePasswordSave = async (password: string) => {
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isPasswordLoading, setIsPasswordLoading] = useState(false);
+
+  const handlePasswordSave = async (password: string, oldPassword?: string) => {
     if (!profile?.username || profile.username === "anonymous") return;
+    setIsPasswordLoading(true);
     axios
-      .put(`users/${profile.username}/password`, { password })
+      .put(`users/${profile.username}/password`, {
+        password,
+        old_password: oldPassword,
+      })
       .then((response) => {
         if (response.status === 200) {
           setPasswordDialogOpen(false);
+          setPasswordError(null);
+          setIsPasswordLoading(false);
           toast.success(
             t("users.toast.success.updatePassword", {
               ns: "views/settings",
@@ -137,15 +155,10 @@ export default function GeneralSettings({ className }: GeneralSettingsProps) {
           error.response?.data?.message ||
           error.response?.data?.detail ||
           "Unknown error";
-        toast.error(
-          t("users.toast.error.setPasswordFailed", {
-            ns: "views/settings",
-            errorMessage,
-          }),
-          {
-            position: "top-center",
-          },
-        );
+
+        // Keep dialog open and show error
+        setPasswordError(errorMessage);
+        setIsPasswordLoading(false);
       });
   };
 
@@ -189,6 +202,16 @@ export default function GeneralSettings({ className }: GeneralSettingsProps) {
               : "max-h-[75dvh] overflow-hidden p-2"
           }
         >
+          {!isDesktop && (
+            <>
+              <DrawerTitle className="sr-only">
+                {t("menu.settings")}
+              </DrawerTitle>
+              <DrawerDescription className="sr-only">
+                {t("menu.settings")}
+              </DrawerDescription>
+            </>
+          )}
           <div className="scrollbar-container w-full flex-col overflow-y-auto overflow-x-hidden">
             {isMobile && (
               <div className="mb-2">
@@ -315,6 +338,19 @@ export default function GeneralSettings({ className }: GeneralSettingsProps) {
                   </Link>
                 </>
               )}
+              {isAdmin && isMobile && (
+                <>
+                  <Link to="/classification">
+                    <MenuItem
+                      className="flex w-full items-center p-2 text-sm"
+                      aria-label={t("menu.classification")}
+                    >
+                      <MdCategory className="mr-2 size-4" />
+                      <span>{t("menu.classification")}</span>
+                    </MenuItem>
+                  </Link>
+                </>
+              )}
             </DropdownMenuGroup>
             <DropdownMenuLabel className={isDesktop ? "mt-3" : "mt-1"}>
               {t("menu.appearance")}
@@ -337,6 +373,16 @@ export default function GeneralSettings({ className }: GeneralSettingsProps) {
                       : "scrollbar-container max-h-[75dvh] w-[92%] overflow-y-scroll rounded-lg md:rounded-2xl"
                   }
                 >
+                  {!isDesktop && (
+                    <>
+                      <DialogTitle className="sr-only">
+                        {t("menu.languages")}
+                      </DialogTitle>
+                      <DialogDescription className="sr-only">
+                        {t("menu.languages")}
+                      </DialogDescription>
+                    </>
+                  )}
                   <span tabIndex={0} className="sr-only" />
                   {languages.map(({ code, label }) => (
                     <MenuItem
@@ -377,6 +423,16 @@ export default function GeneralSettings({ className }: GeneralSettingsProps) {
                     isDesktop ? "" : "w-[92%] rounded-lg md:rounded-2xl"
                   }
                 >
+                  {!isDesktop && (
+                    <>
+                      <DialogTitle className="sr-only">
+                        {t("menu.darkMode.label")}
+                      </DialogTitle>
+                      <DialogDescription className="sr-only">
+                        {t("menu.darkMode.label")}
+                      </DialogDescription>
+                    </>
+                  )}
                   <span tabIndex={0} className="sr-only" />
                   <MenuItem
                     className={
@@ -454,6 +510,16 @@ export default function GeneralSettings({ className }: GeneralSettingsProps) {
                     isDesktop ? "" : "w-[92%] rounded-lg md:rounded-2xl"
                   }
                 >
+                  {!isDesktop && (
+                    <>
+                      <DialogTitle className="sr-only">
+                        {t("menu.theme.label")}
+                      </DialogTitle>
+                      <DialogDescription className="sr-only">
+                        {t("menu.theme.label")}
+                      </DialogDescription>
+                    </>
+                  )}
                   <span tabIndex={0} className="sr-only" />
                   {colorSchemes.map((scheme) => (
                     <MenuItem
@@ -540,8 +606,13 @@ export default function GeneralSettings({ className }: GeneralSettingsProps) {
       <SetPasswordDialog
         show={passwordDialogOpen}
         onSave={handlePasswordSave}
-        onCancel={() => setPasswordDialogOpen(false)}
+        onCancel={() => {
+          setPasswordDialogOpen(false);
+          setPasswordError(null);
+        }}
+        initialError={passwordError}
         username={profile?.username}
+        isLoading={isPasswordLoading}
       />
     </>
   );

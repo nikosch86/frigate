@@ -8,16 +8,16 @@ import cv2
 import numpy as np
 from pydantic import Field
 
-from frigate.const import MODEL_CACHE_DIR
+from frigate.const import MODEL_CACHE_DIR, SUPPORTED_RK_SOCS
 from frigate.detectors.detection_api import DetectionApi
+from frigate.detectors.detection_runners import RKNNModelRunner
 from frigate.detectors.detector_config import BaseDetectorConfig, ModelTypeEnum
 from frigate.util.model import post_process_yolo
+from frigate.util.rknn_converter import auto_convert_model
 
 logger = logging.getLogger(__name__)
 
 DETECTOR_KEY = "rknn"
-
-supported_socs = ["rk3562", "rk3566", "rk3568", "rk3576", "rk3588"]
 
 supported_models = {
     ModelTypeEnum.yologeneric: "^frigate-fp16-yolov9-[cemst]$",
@@ -60,18 +60,18 @@ class Rknn(DetectionApi):
                     "For more information, see: https://docs.deci.ai/super-gradients/latest/LICENSE.YOLONAS.html"
                 )
 
-        from rknnlite.api import RKNNLite
-
-        self.rknn = RKNNLite(verbose=False)
-        if self.rknn.load_rknn(model_props["path"]) != 0:
-            logger.error("Error initializing rknn model.")
-        if self.rknn.init_runtime(core_mask=core_mask) != 0:
-            logger.error(
-                "Error initializing rknn runtime. Do you run docker in privileged mode?"
-            )
+        self.runner = RKNNModelRunner(
+            model_path=model_props["path"],
+            model_type=config.model.model_type.value
+            if config.model.model_type
+            else None,
+            core_mask=core_mask,
+        )
 
     def __del__(self):
-        self.rknn.release()
+        if hasattr(self, "runner") and self.runner:
+            # The runner's __del__ method will handle cleanup
+            pass
 
     def get_soc(self):
         try:
@@ -80,9 +80,9 @@ class Rknn(DetectionApi):
         except FileNotFoundError:
             raise Exception("Make sure to run docker in privileged mode.")
 
-        if soc not in supported_socs:
+        if soc not in SUPPORTED_RK_SOCS:
             raise Exception(
-                f"Your SoC is not supported. Your SoC is: {soc}. Currently these SoCs are supported: {supported_socs}."
+                f"Your SoC is not supported. Your SoC is: {soc}. Currently these SoCs are supported: {SUPPORTED_RK_SOCS}."
             )
 
         return soc
@@ -94,7 +94,34 @@ class Rknn(DetectionApi):
         # user provided models should be a path and contain a "/"
         if "/" in model_path:
             model_props["preset"] = False
-            model_props["path"] = model_path
+
+            # Check if this is an ONNX model or model without extension that needs conversion
+            if model_path.endswith(".onnx") or not os.path.splitext(model_path)[1]:
+                # Try to auto-convert to RKNN format
+                logger.info(
+                    f"Attempting to auto-convert {model_path} to RKNN format..."
+                )
+
+                # Determine model type from config
+                model_type = self.detector_config.model.model_type
+
+                # Convert enum to string if needed
+                model_type_str = model_type.value if model_type else None
+
+                # Auto-convert the model
+                converted_path = auto_convert_model(model_path, model_type_str)
+
+                if converted_path:
+                    model_props["path"] = converted_path
+                    logger.info(f"Successfully converted model to: {converted_path}")
+                else:
+                    # Fall back to original path if conversion fails
+                    logger.warning(
+                        f"Failed to convert {model_path} to RKNN format, using original path"
+                    )
+                    model_props["path"] = model_path
+            else:
+                model_props["path"] = model_path
         else:
             model_props["preset"] = True
 
@@ -281,9 +308,7 @@ class Rknn(DetectionApi):
             )
 
     def detect_raw(self, tensor_input):
-        output = self.rknn.inference(
-            [
-                tensor_input,
-            ]
-        )
+        # Prepare input for the runner
+        inputs = {"input": tensor_input}
+        output = self.runner.run(inputs)
         return self.post_process(output)

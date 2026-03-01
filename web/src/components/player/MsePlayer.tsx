@@ -1,4 +1,5 @@
 import { baseUrl } from "@/api/baseUrl";
+import { useUserPersistence } from "@/hooks/use-user-persistence";
 import {
   LivePlayerError,
   PlayerStatsType,
@@ -71,18 +72,49 @@ function MSEPlayer({
   const [errorCount, setErrorCount] = useState<number>(0);
   const totalBytesLoaded = useRef(0);
 
+  const [fallbackTimeout] = useUserPersistence<number>(
+    "liveFallbackTimeout",
+    3,
+  );
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTIDRef = useRef<number | null>(null);
+  const intentionalDisconnectRef = useRef<boolean>(false);
   const ondataRef = useRef<((data: ArrayBufferLike) => void) | null>(null);
   const onmessageRef = useRef<{
     [key: string]: (msg: { value: string; type: string }) => void;
   }>({});
   const msRef = useRef<MediaSource | null>(null);
+  const mseCodecRef = useRef<string | null>(null);
+  const mseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mseResponseReceivedRef = useRef<boolean>(false);
 
   const wsURL = useMemo(() => {
     return `${baseUrl.replace(/^http/, "ws")}live/mse/api/ws?src=${camera}`;
   }, [camera]);
+
+  const handleError = useCallback(
+    (error: LivePlayerError, description: string = "Unknown error") => {
+      // eslint-disable-next-line no-console
+      console.error(
+        `${camera} - MSE error '${error}': ${description} See the documentation: https://docs.frigate.video/configuration/live/#live-player-error-messages`,
+      );
+
+      if (mseCodecRef.current) {
+        // eslint-disable-next-line no-console
+        console.error(
+          `${camera} - Browser negotiated codecs: ${mseCodecRef.current}`,
+        );
+        // eslint-disable-next-line no-console
+        console.error(`${camera} - Supported codecs: ${CODECS.join(", ")}`);
+      }
+      onError?.(error);
+    },
+    // we know that these deps are correct
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [camera, onError],
+  );
 
   const handleLoadedMetadata = useCallback(() => {
     if (videoRef.current && setFullResolution) {
@@ -123,8 +155,11 @@ function MSEPlayer({
   }, []);
 
   const onConnect = useCallback(() => {
-    if (!videoRef.current?.isConnected || !wsURL || wsRef.current) return false;
+    if (!videoRef.current?.isConnected || !wsURL || wsRef.current) {
+      return false;
+    }
 
+    intentionalDisconnectRef.current = false;
     setWsState(WebSocket.CONNECTING);
 
     setConnectTS(Date.now());
@@ -143,13 +178,50 @@ function MSEPlayer({
       setBufferTimeout(undefined);
     }
 
+    // Clear any pending MSE timeout
+    if (mseTimeoutRef.current !== null) {
+      clearTimeout(mseTimeoutRef.current);
+      mseTimeoutRef.current = null;
+    }
+
+    // Clear any pending reconnect attempts
+    if (reconnectTIDRef.current !== null) {
+      clearTimeout(reconnectTIDRef.current);
+      reconnectTIDRef.current = null;
+    }
+
     setIsPlaying(false);
 
     if (wsRef.current) {
-      setWsState(WebSocket.CLOSED);
-      wsRef.current.close();
+      const ws = wsRef.current;
       wsRef.current = null;
+      const currentReadyState = ws.readyState;
+
+      intentionalDisconnectRef.current = true;
+      setWsState(WebSocket.CLOSED);
+
+      // Remove event listeners to prevent them firing during close
+      try {
+        ws.removeEventListener("open", onOpen);
+        ws.removeEventListener("close", onClose);
+      } catch {
+        // Ignore errors removing listeners
+      }
+
+      // Only call close() if the socket is OPEN or CLOSING
+      // For CONNECTING or CLOSED sockets, just let it die
+      if (
+        currentReadyState === WebSocket.OPEN ||
+        currentReadyState === WebSocket.CLOSING
+      ) {
+        try {
+          ws.close();
+        } catch {
+          // Ignore close errors
+        }
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bufferTimeout]);
 
   const handlePause = useCallback(() => {
@@ -159,7 +231,14 @@ function MSEPlayer({
     }
   }, [isPlaying, playbackEnabled]);
 
-  const onOpen = () => {
+  const onOpen = useCallback(() => {
+    // If we were marked for intentional disconnect while connecting, close immediately
+    if (intentionalDisconnectRef.current) {
+      wsRef.current?.close();
+      wsRef.current = null;
+      return;
+    }
+
     setWsState(WebSocket.OPEN);
 
     wsRef.current?.addEventListener("message", (ev) => {
@@ -176,10 +255,27 @@ function MSEPlayer({
     ondataRef.current = null;
     onmessageRef.current = {};
 
+    // Reset the MSE response flag for this new connection
+    mseResponseReceivedRef.current = false;
+
+    // Create a fresh MediaSource for this connection to avoid stale sourceopen events
+    // from previous connections interfering with this one
+    const MediaSourceConstructor =
+      "ManagedMediaSource" in window ? window.ManagedMediaSource : MediaSource;
+    // @ts-expect-error for typing
+    msRef.current = new MediaSourceConstructor();
+
     onMse();
-  };
+    // onMse is defined below and stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const reconnect = (timeout?: number) => {
+    // Don't reconnect if intentional disconnect was flagged
+    if (intentionalDisconnectRef.current) {
+      return;
+    }
+
     setWsState(WebSocket.CONNECTING);
     wsRef.current = null;
 
@@ -192,28 +288,79 @@ function MSEPlayer({
     }, delay);
   };
 
-  const onClose = () => {
+  const onClose = useCallback(() => {
+    // Don't reconnect if this was an intentional disconnect
+    if (intentionalDisconnectRef.current) {
+      // Reset the flag so future connects are allowed
+      intentionalDisconnectRef.current = false;
+      return;
+    }
+
     if (wsState === WebSocket.CLOSED) return;
     reconnect();
-  };
+    // reconnect is defined below and stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsState]);
 
   const sendWithTimeout = (value: object, timeout: number) => {
     return new Promise<void>((resolve, reject) => {
+      // Don't start timeout if WS isn't connected - this can happen when
+      // sourceopen fires from a previous connection after we've already disconnected
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        // Reject so caller knows this didn't work
+        reject(new Error("WebSocket not connected"));
+        return;
+      }
+
+      // If we've already received an MSE response for this connection, don't start another timeout
+      if (mseResponseReceivedRef.current) {
+        resolve();
+        return;
+      }
+
+      // Clear any existing MSE timeout from a previous attempt
+      if (mseTimeoutRef.current !== null) {
+        clearTimeout(mseTimeoutRef.current);
+        mseTimeoutRef.current = null;
+      }
+
       const timeoutId = setTimeout(() => {
-        reject(new Error("Timeout waiting for response"));
+        // Only reject if we haven't received a response yet
+        if (!mseResponseReceivedRef.current) {
+          mseTimeoutRef.current = null;
+          reject(new Error("Timeout waiting for response"));
+        }
       }, timeout);
 
-      send(value);
+      mseTimeoutRef.current = timeoutId;
 
       // Override the onmessageRef handler for mse type to resolve the promise on response
       const originalHandler = onmessageRef.current["mse"];
       onmessageRef.current["mse"] = (msg) => {
         if (msg.type === "mse") {
-          clearTimeout(timeoutId);
-          if (originalHandler) originalHandler(msg);
+          // Mark that we've received the response
+          mseResponseReceivedRef.current = true;
+
+          // Clear the timeout (use ref to clear the current one, not closure)
+          if (mseTimeoutRef.current !== null) {
+            clearTimeout(mseTimeoutRef.current);
+            mseTimeoutRef.current = null;
+          }
+
+          // Call original handler in try-catch so errors don't prevent promise resolution
+          if (originalHandler) {
+            try {
+              originalHandler(msg);
+            } catch (e) {
+              // Don't reject - we got the response, just let the error bubble
+            }
+          }
+
           resolve();
         }
       };
+
+      send(value);
     });
   };
 
@@ -231,15 +378,15 @@ function MSEPlayer({
               // @ts-expect-error for typing
               value: codecs(MediaSource.isTypeSupported),
             },
-            3000,
+            (fallbackTimeout ?? 3) * 1000,
           ).catch(() => {
             if (wsRef.current) {
               onDisconnect();
             }
             if (isIOS || isSafari) {
-              onError?.("mse-decode");
+              handleError("mse-decode", "Safari cannot open MediaSource.");
             } else {
-              onError?.("startup");
+              handleError("startup", "Error opening MediaSource.");
             }
           });
         },
@@ -261,15 +408,17 @@ function MSEPlayer({
               type: "mse",
               value: codecs(MediaSource.isTypeSupported),
             },
-            3000,
+            (fallbackTimeout ?? 3) * 1000,
           ).catch(() => {
+            // Only report errors if we actually had a connection that failed
+            // If WS wasn't connected, this is a stale sourceopen event from a previous connection
             if (wsRef.current) {
               onDisconnect();
-            }
-            if (isIOS || isSafari) {
-              onError?.("mse-decode");
-            } else {
-              onError?.("startup");
+              if (isIOS || isSafari) {
+                handleError("mse-decode", "Safari cannot open MediaSource.");
+              } else {
+                handleError("startup", "Error opening MediaSource.");
+              }
             }
           });
         },
@@ -285,6 +434,9 @@ function MSEPlayer({
     onmessageRef.current["mse"] = (msg) => {
       if (msg.type !== "mse") return;
 
+      // Store the codec value for error logging
+      mseCodecRef.current = msg.value;
+
       let sb: SourceBuffer | undefined;
       try {
         sb = msRef.current?.addSourceBuffer(msg.value);
@@ -297,7 +449,7 @@ function MSEPlayer({
           if (wsRef.current) {
             onDisconnect();
           }
-          onError?.("mse-decode");
+          handleError("mse-decode", "Safari reported InvalidStateError.");
           return;
         } else {
           throw e; // Re-throw if it's not the error we're handling
@@ -424,7 +576,10 @@ function MSEPlayer({
       (bufferThreshold > 10 || bufferTime > 10)
     ) {
       onDisconnect();
-      onError?.("stalled");
+      handleError(
+        "stalled",
+        "Buffer time (10 seconds) exceeded, browser may not be playing media correctly.",
+      );
     }
 
     const playbackRate = calculateAdaptivePlaybackRate(
@@ -461,7 +616,10 @@ function MSEPlayer({
         setBufferTimeout(undefined);
       }
 
-      const timeoutDuration = bufferTime == 0 ? 5000 : 3000;
+      const timeoutDuration =
+        bufferTime == 0
+          ? (fallbackTimeout ?? 3) * 2 * 1000
+          : (fallbackTimeout ?? 3) * 1000;
       setBufferTimeout(
         setTimeout(() => {
           if (
@@ -470,7 +628,10 @@ function MSEPlayer({
             videoRef.current
           ) {
             onDisconnect();
-            onError("stalled");
+            handleError(
+              "stalled",
+              `Media playback has stalled after ${timeoutDuration / 1000} seconds due to insufficient buffering or a network interruption.`,
+            );
           }
         }, timeoutDuration),
       );
@@ -479,22 +640,17 @@ function MSEPlayer({
     bufferTimeout,
     isPlaying,
     onDisconnect,
+    handleError,
     onError,
     onPlaying,
     playbackEnabled,
+    fallbackTimeout,
   ]);
 
   useEffect(() => {
     if (!playbackEnabled) {
       return;
     }
-
-    // iOS 17.1+ uses ManagedMediaSource
-    const MediaSourceConstructor =
-      "ManagedMediaSource" in window ? window.ManagedMediaSource : MediaSource;
-
-    // @ts-expect-error for typing
-    msRef.current = new MediaSourceConstructor();
 
     onConnect();
 
@@ -663,7 +819,7 @@ function MSEPlayer({
           if (wsRef.current) {
             onDisconnect();
           }
-          onError?.("startup");
+          handleError("startup", "Browser reported a network error.");
         }
 
         if (
@@ -674,7 +830,7 @@ function MSEPlayer({
           if (wsRef.current) {
             onDisconnect();
           }
-          onError?.("mse-decode");
+          handleError("mse-decode", "Safari reported decoding errors.");
         }
 
         setErrorCount((prevCount) => prevCount + 1);
@@ -683,7 +839,7 @@ function MSEPlayer({
           onDisconnect();
           if (errorCount >= 3) {
             // too many mse errors, try jsmpeg
-            onError?.("startup");
+            handleError("startup", `Max error count ${errorCount} exceeded.`);
           } else {
             reconnect(5000);
           }

@@ -3,6 +3,7 @@
 import io
 import logging
 import os
+import threading
 
 import numpy as np
 from PIL import Image
@@ -11,11 +12,12 @@ from transformers.utils.logging import disable_progress_bar, set_verbosity_error
 
 from frigate.comms.inter_process import InterProcessRequestor
 from frigate.const import MODEL_CACHE_DIR, UPDATE_MODEL_STATE
+from frigate.detectors.detection_runners import get_optimized_runner
+from frigate.embeddings.types import EnrichmentModelTypeEnum
 from frigate.types import ModelStatusTypesEnum
 from frigate.util.downloader import ModelDownloader
 
 from .base_embedding import BaseEmbedding
-from .runner import ONNXModelRunner
 
 # disables the progress bar and download logging for downloading tokenizers and image processors
 disable_progress_bar()
@@ -52,6 +54,11 @@ class JinaV2Embedding(BaseEmbedding):
         self.tokenizer = None
         self.image_processor = None
         self.runner = None
+
+        # Lock to prevent concurrent calls (text and vision share this instance)
+        self._call_lock = threading.Lock()
+
+        # download the model and tokenizer
         files_names = list(self.download_urls.keys()) + [self.tokenizer_file]
         if not all(
             os.path.exists(os.path.join(self.download_path, n)) for n in files_names
@@ -64,6 +71,9 @@ class JinaV2Embedding(BaseEmbedding):
                 download_func=self._download_model,
             )
             self.downloader.ensure_model_files()
+            # Avoid lazy loading in worker threads: block until downloads complete
+            # and load the model on the main thread during initialization.
+            self._load_model_and_utils()
         else:
             self.downloader = None
             ModelDownloader.mark_files_state(
@@ -125,10 +135,10 @@ class JinaV2Embedding(BaseEmbedding):
                 clean_up_tokenization_spaces=True,
             )
 
-            self.runner = ONNXModelRunner(
+            self.runner = get_optimized_runner(
                 os.path.join(self.download_path, self.model_file),
                 self.device,
-                self.model_size,
+                model_type=EnrichmentModelTypeEnum.jina_v2.value,
             )
 
     def _preprocess_image(self, image_data: bytes | Image.Image) -> np.ndarray:
@@ -196,37 +206,40 @@ class JinaV2Embedding(BaseEmbedding):
     def __call__(
         self, inputs: list[str] | list[Image.Image] | list[str], embedding_type=None
     ) -> list[np.ndarray]:
-        self.embedding_type = embedding_type
-        if not self.embedding_type:
-            raise ValueError(
-                "embedding_type must be specified either in __init__ or __call__"
-            )
+        # Lock the entire call to prevent race conditions when text and vision
+        # embeddings are called concurrently from different threads
+        with self._call_lock:
+            self.embedding_type = embedding_type
+            if not self.embedding_type:
+                raise ValueError(
+                    "embedding_type must be specified either in __init__ or __call__"
+                )
 
-        self._load_model_and_utils()
-        processed = self._preprocess_inputs(inputs)
-        batch_size = len(processed)
+            self._load_model_and_utils()
+            processed = self._preprocess_inputs(inputs)
+            batch_size = len(processed)
 
-        # Prepare ONNX inputs with matching batch sizes
-        onnx_inputs = {}
-        if self.embedding_type == "text":
-            onnx_inputs["input_ids"] = np.stack([x[0] for x in processed])
-            onnx_inputs["pixel_values"] = np.zeros(
-                (batch_size, 3, 512, 512), dtype=np.float32
-            )
-        elif self.embedding_type == "vision":
-            onnx_inputs["input_ids"] = np.zeros((batch_size, 16), dtype=np.int64)
-            onnx_inputs["pixel_values"] = np.stack([x[0] for x in processed])
-        else:
-            raise ValueError("Invalid embedding type")
+            # Prepare ONNX inputs with matching batch sizes
+            onnx_inputs = {}
+            if self.embedding_type == "text":
+                onnx_inputs["input_ids"] = np.stack([x[0] for x in processed])
+                onnx_inputs["pixel_values"] = np.zeros(
+                    (batch_size, 3, 512, 512), dtype=np.float32
+                )
+            elif self.embedding_type == "vision":
+                onnx_inputs["input_ids"] = np.zeros((batch_size, 16), dtype=np.int64)
+                onnx_inputs["pixel_values"] = np.stack([x[0] for x in processed])
+            else:
+                raise ValueError("Invalid embedding type")
 
-        # Run inference
-        outputs = self.runner.run(onnx_inputs)
-        if self.embedding_type == "text":
-            embeddings = outputs[2]  # text embeddings
-        elif self.embedding_type == "vision":
-            embeddings = outputs[3]  # image embeddings
-        else:
-            raise ValueError("Invalid embedding type")
+            # Run inference
+            outputs = self.runner.run(onnx_inputs)
+            if self.embedding_type == "text":
+                embeddings = outputs[2]  # text embeddings
+            elif self.embedding_type == "vision":
+                embeddings = outputs[3]  # image embeddings
+            else:
+                raise ValueError("Invalid embedding type")
 
-        embeddings = self._postprocess_outputs(embeddings)
-        return [embedding for embedding in embeddings]
+            embeddings = self._postprocess_outputs(embeddings)
+            return [embedding for embedding in embeddings]

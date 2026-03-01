@@ -66,7 +66,7 @@
     "type": {
       "label": "Típus",
       "timestamp": "Időbélyeg",
-      "tag": "Cédula",
+      "tag": "Címke",
       "message": "Üzenet"
     },
     "toast": {
@@ -87,7 +87,8 @@
       "inferenceSpeed": "Érzékelők Inferencia Sebessége",
       "cpuUsage": "Érzékelő CPU Kihasználtság",
       "memoryUsage": "Érzékelő Memória Kihasználtság",
-      "temperature": "Érzékelő Hőmérséklete"
+      "temperature": "Érzékelő Hőmérséklete",
+      "cpuUsageInformation": "A detektálási modellekbe érkező és onnan távozó bemeneti és kimeneti adatok előkészítéséhez használt CPU. Ez az érték nem méri a következtetési kihasználtságot, még GPU vagy gyorsító használata esetén sem."
     },
     "hardwareInfo": {
       "title": "Hardver Infó",
@@ -120,12 +121,19 @@
       "gpuEncoder": "GPU Enkóder",
       "gpuDecoder": "GPU Dekóder",
       "npuUsage": "NPU Kihasználtság",
-      "npuMemory": "NPU Memória"
+      "npuMemory": "NPU Memória",
+      "intelGpuWarning": {
+        "message": "GPU statisztika nem érhető el"
+      }
     },
     "otherProcesses": {
       "processMemoryUsage": "Folyamat Memória Kihasználtság",
       "title": "Egyéb Folyamatok",
-      "processCpuUsage": "Folyamat CPU Kihasználtság"
+      "processCpuUsage": "Folyamat CPU Kihasználtság",
+      "series": {
+        "go2rtc": "go2rtc",
+        "recording": "felvétel"
+      }
     }
   },
   "storage": {
@@ -147,6 +155,10 @@
         "title": "Felhasználatlan",
         "tips": "Ez az érték nem feltétlenül tükrözi pontosan a Frigate számára elérhető szabad helyet, ha a meghajtón egyéb fájlok is tárolva vannak a Frigate felvételein kívül. A Frigate nem követi a tárhelyhasználatot a saját felvételein kívül."
       }
+    },
+    "shm": {
+      "title": "SHM (megosztott memória) kiosztás",
+      "warning": "A jelenlegi SHM mérete ({{total}}MB) túl kicsi. Növeld meg minimum ennyivel: {{min_shm}}MB."
     }
   },
   "enrichments": {
@@ -174,7 +186,8 @@
     "detectIsSlow": "{{detect}} lassú ({{speed}} ms)",
     "reindexingEmbeddings": "Beágyazások újra indexelése ({{processed}}% kész)",
     "ffmpegHighCpuUsage": "{{camera}}-nak/-nek magas FFmpeg CPU felhasználása ({{ffmpegAvg}}%)",
-    "detectHighCpuUsage": "A(z) {{camera}} kameránál magas az észlelési CPU-használat ({{detectAvg}}%)"
+    "detectHighCpuUsage": "A(z) {{camera}} kameránál magas az észlelési CPU-használat ({{detectAvg}}%)",
+    "shmTooLow": "A /dev/shm részére foglalt területet ({{total}} MB) legalább {{min}} MB-ra kell növelni."
   },
   "lastRefreshed": "Utoljára frissítve: "
 }

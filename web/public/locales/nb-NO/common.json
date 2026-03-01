@@ -81,7 +81,11 @@
     "formattedTimestampMonthDayYear": {
       "24hour": "d. MMM, yyyy",
       "12hour": "d. MMM, yyyy"
-    }
+    },
+    "inProgress": "Pågår",
+    "invalidStartTime": "Ugyldig starttid",
+    "invalidEndTime": "Ugyldig sluttid",
+    "never": "Aldri"
   },
   "button": {
     "copy": "Kopier",
@@ -118,7 +122,8 @@
     "unselect": "Fjern valg",
     "export": "Eksporter",
     "deleteNow": "Slett nå",
-    "next": "Neste"
+    "next": "Neste",
+    "continue": "Fortsett"
   },
   "menu": {
     "help": "Hjelp",
@@ -139,7 +144,7 @@
     "review": "Inspiser",
     "explore": "Utforsk",
     "export": "Eksporter",
-    "uiPlayground": "UI Sandkasse",
+    "uiPlayground": "UI-Sandkasse",
     "faceLibrary": "Ansiktsbibliotek",
     "user": {
       "title": "Bruker",
@@ -190,7 +195,16 @@
       "uk": "Українська (Ukrainsk)",
       "yue": "粵語 (Kantonesisk)",
       "th": "ไทย (Thai)",
-      "ca": "Català (Katalansk)"
+      "ca": "Català (Katalansk)",
+      "ptBR": "Português brasileiro (Brasiliansk portugisisk)",
+      "sr": "Српски (Serbisk)",
+      "sl": "Slovenščina (Slovensk)",
+      "lt": "Lietuvių (Litauisk)",
+      "bg": "Български (Bulgarsk)",
+      "gl": "Galego (Galisisk)",
+      "id": "Bahasa Indonesia (Indonesisk)",
+      "ur": "اردو (Urdu)",
+      "hr": "Hrvatski (Kroatisk)"
     },
     "appearance": "Utseende",
     "darkMode": {
@@ -211,7 +225,8 @@
       "contrast": "Høy kontrast",
       "default": "Standard",
       "highcontrast": "Høy kontrast"
-    }
+    },
+    "classification": "Klassifisering"
   },
   "pagination": {
     "next": {
@@ -233,10 +248,24 @@
     "length": {
       "meters": "meter",
       "feet": "fot"
+    },
+    "data": {
+      "kbps": "kB/s",
+      "mbps": "MB/s",
+      "gbps": "GB/s",
+      "kbph": "kB/time",
+      "mbph": "MB/time",
+      "gbph": "GB/time"
     }
   },
   "label": {
-    "back": "Gå tilbake"
+    "back": "Gå tilbake",
+    "hide": "Skjul {{item}}",
+    "show": "Vis {{item}}",
+    "ID": "ID",
+    "none": "Ingen",
+    "all": "Alle",
+    "other": "Annet"
   },
   "toast": {
     "copyUrlToClipboard": "Nettadresse kopiert til utklippstavlen.",
@@ -264,5 +293,18 @@
     "title": "404",
     "desc": "Siden ble ikke funnet"
   },
-  "selectItem": "Velg {{item}}"
+  "selectItem": "Velg {{item}}",
+  "readTheDocumentation": "Se dokumentasjonen",
+  "information": {
+    "pixels": "{{area}}piklser"
+  },
+  "field": {
+    "internalID": "Den interne ID-en som Frigate bruker i konfigurasjonen og databasen",
+    "optional": "Valgfritt"
+  },
+  "list": {
+    "two": "{{0}} og {{1}}",
+    "many": "{{items}}, og {{last}}",
+    "separatorWithSpace": ", "
+  }
 }

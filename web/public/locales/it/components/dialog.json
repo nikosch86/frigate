@@ -6,7 +6,8 @@
       "title": "Frigate si sta riavviando",
       "content": "Questa pagina si ricaricherà in {{countdown}} secondi.",
       "button": "Forza ricarica ora"
-    }
+    },
+    "description": "Questo fermerà brevemente Frigate mentre si riavvia."
   },
   "explore": {
     "plus": {
@@ -61,12 +62,13 @@
     "export": "Esporta",
     "selectOrExport": "Seleziona o esporta",
     "toast": {
-      "success": "Esportazione avviata correttamente. Visualizza il file nella cartella /exports.",
+      "success": "Esportazione avviata correttamente. Visualizza il file nella pagina delle esportazioni.",
       "error": {
         "failed": "Impossibile avviare l'esportazione: {{error}}",
         "endTimeMustAfterStartTime": "L'ora di fine deve essere successiva all'ora di inizio",
         "noVaildTimeSelected": "Nessun intervallo di tempo valido selezionato"
-      }
+      },
+      "view": "Visualizzazione"
     },
     "fromTimeline": {
       "saveExport": "Salva esportazione",
@@ -110,7 +112,8 @@
     "button": {
       "export": "Esporta",
       "markAsReviewed": "Segna come visto",
-      "deleteNow": "Elimina ora"
+      "deleteNow": "Elimina ora",
+      "markAsUnreviewed": "Segna come non visto"
     },
     "confirmDelete": {
       "desc": {
@@ -122,5 +125,13 @@
         "error": "Impossibile eliminare: {{error}}"
       }
     }
+  },
+  "imagePicker": {
+    "selectImage": "Seleziona la miniatura di un oggetto tracciato",
+    "search": {
+      "placeholder": "Cerca per etichetta o sottoetichetta..."
+    },
+    "noImages": "Nessuna miniatura trovata per questa telecamera",
+    "unknownLabel": "Immagine di attivazione salvata"
   }
 }

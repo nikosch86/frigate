@@ -50,7 +50,8 @@
         },
         "placeholder": "Izberite tok",
         "stream": "Tok"
-      }
+      },
+      "birdseye": "Ptičji pogled"
     },
     "name": {
       "label": "Ime",
@@ -72,9 +73,9 @@
   "debug": {
     "options": {
       "label": "Nastavitve",
-      "title": "Lastnosti",
-      "showOptions": "Prikaži lastnosti",
-      "hideOptions": "Skrij lastnosti"
+      "title": "Možnosti",
+      "showOptions": "Prikaži Možnosti",
+      "hideOptions": "Skrij Možnosti"
     },
     "boundingBox": "Omejitve okvirja",
     "timestamp": "Časovni žig",

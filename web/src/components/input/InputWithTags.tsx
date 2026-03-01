@@ -37,7 +37,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { TooltipPortal } from "@radix-ui/react-tooltip";
-import { usePersistence } from "@/hooks/use-persistence";
+import { useUserPersistence } from "@/hooks/use-user-persistence";
 import { SaveSearchDialog } from "./SaveSearchDialog";
 import { DeleteSearchDialog } from "./DeleteSearchDialog";
 import {
@@ -53,6 +53,7 @@ import { FrigateConfig } from "@/types/frigateConfig";
 import { MdImageSearch } from "react-icons/md";
 import { useTranslation } from "react-i18next";
 import { getTranslatedLabel } from "@/utils/i18n";
+import { CameraNameLabel, ZoneNameLabel } from "../camera/FriendlyNameLabel";
 
 type InputWithTagsProps = {
   inputFocused: boolean;
@@ -80,6 +81,43 @@ export default function InputWithTags({
     revalidateOnFocus: false,
   });
 
+  const allAudioListenLabels = useMemo<Set<string>>(() => {
+    if (!config) {
+      return new Set<string>();
+    }
+
+    const labels = new Set<string>();
+    Object.values(config.cameras).forEach((camera) => {
+      if (camera?.audio?.enabled) {
+        camera.audio.listen.forEach((label) => {
+          labels.add(label);
+        });
+      }
+    });
+    return labels;
+  }, [config]);
+
+  const translatedAudioLabelMap = useMemo<Map<string, string>>(() => {
+    const map = new Map<string, string>();
+    if (!config) return map;
+
+    allAudioListenLabels.forEach((label) => {
+      // getTranslatedLabel likely depends on i18n internally; including `lang`
+      // in deps ensures this map is rebuilt when language changes
+      map.set(label, getTranslatedLabel(label, "audio"));
+    });
+    return map;
+  }, [allAudioListenLabels, config]);
+
+  function resolveLabel(value: string) {
+    const mapped = translatedAudioLabelMap.get(value);
+    if (mapped) return mapped;
+    return getTranslatedLabel(
+      value,
+      allAudioListenLabels.has(value) ? "audio" : "object",
+    );
+  }
+
   const [inputValue, setInputValue] = useState(search || "");
   const [currentFilterType, setCurrentFilterType] = useState<FilterType | null>(
     null,
@@ -90,9 +128,8 @@ export default function InputWithTags({
 
   // TODO: search history from browser storage
 
-  const [searchHistory, setSearchHistory, searchHistoryLoaded] = usePersistence<
-    SavedSearchQuery[]
-  >("frigate-search-history");
+  const [searchHistory, setSearchHistory, searchHistoryLoaded] =
+    useUserPersistence<SavedSearchQuery[]>("frigate-search-history");
 
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -362,7 +399,7 @@ export default function InputWithTags({
             newFilters.sort = value as SearchSortType;
             break;
           default:
-            // Handle array types (cameras, labels, subLabels, zones)
+            // Handle array types (cameras, labels, sub_labels, attributes, zones)
             if (!newFilters[type]) newFilters[type] = [];
             if (Array.isArray(newFilters[type])) {
               if (!(newFilters[type] as string[]).includes(value)) {
@@ -420,7 +457,8 @@ export default function InputWithTags({
         ? t("button.yes", { ns: "common" })
         : t("button.no", { ns: "common" });
     } else if (filterType === "labels") {
-      return getTranslatedLabel(String(filterValues));
+      const value = String(filterValues);
+      return resolveLabel(value);
     } else if (filterType === "search_type") {
       return t("filter.searchType." + String(filterValues));
     } else {
@@ -826,9 +864,15 @@ export default function InputWithTags({
                             className="inline-flex items-center whitespace-nowrap rounded-full bg-green-100 px-2 py-0.5 text-sm text-green-800 smart-capitalize"
                           >
                             {t("filter.label." + filterType)}:{" "}
-                            {filterType === "labels"
-                              ? getTranslatedLabel(value)
-                              : value.replaceAll("_", " ")}
+                            {filterType === "labels" ? (
+                              resolveLabel(value)
+                            ) : filterType === "cameras" ? (
+                              <CameraNameLabel camera={value} />
+                            ) : filterType === "zones" ? (
+                              <ZoneNameLabel zone={value} />
+                            ) : (
+                              value.replaceAll("_", " ")
+                            )}
                             <button
                               onClick={() =>
                                 removeFilter(filterType as FilterType, value)
@@ -923,13 +967,34 @@ export default function InputWithTags({
                   onSelect={() => handleSuggestionClick(suggestion)}
                 >
                   {i18n.language === "en" ? (
-                    suggestion
+                    currentFilterType && currentFilterType === "cameras" ? (
+                      <>
+                        {suggestion} {" ("}{" "}
+                        <CameraNameLabel camera={suggestion} />
+                        {")"}
+                      </>
+                    ) : currentFilterType === "zones" ? (
+                      <>
+                        {suggestion} {" ("} <ZoneNameLabel zone={suggestion} />
+                        {")"}
+                      </>
+                    ) : (
+                      suggestion
+                    )
                   ) : (
                     <>
                       {suggestion} {" ("}
-                      {currentFilterType
-                        ? formatFilterValues(currentFilterType, suggestion)
-                        : t("filter.label." + suggestion)}
+                      {currentFilterType ? (
+                        currentFilterType === "cameras" ? (
+                          <CameraNameLabel camera={suggestion} />
+                        ) : currentFilterType === "zones" ? (
+                          <ZoneNameLabel zone={suggestion} />
+                        ) : (
+                          formatFilterValues(currentFilterType, suggestion)
+                        )
+                      ) : (
+                        t("filter.label." + suggestion)
+                      )}
                       {")"}
                     </>
                   )}

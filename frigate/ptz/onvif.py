@@ -33,6 +33,8 @@ class OnvifCommandEnum(str, Enum):
     stop = "stop"
     zoom_in = "zoom_in"
     zoom_out = "zoom_out"
+    focus_in = "focus_in"
+    focus_out = "focus_out"
 
 
 class OnvifController:
@@ -93,12 +95,21 @@ class OnvifController:
 
         cam = self.camera_configs[cam_name]
         try:
+            user = cam.onvif.user
+            password = cam.onvif.password
+
+            if user is not None and isinstance(user, bytes):
+                user = user.decode("utf-8")
+
+            if password is not None and isinstance(password, bytes):
+                password = password.decode("utf-8")
+
             self.cams[cam_name] = {
                 "onvif": ONVIFCamera(
                     cam.onvif.host,
                     cam.onvif.port,
-                    cam.onvif.user,
-                    cam.onvif.password,
+                    user,
+                    password,
                     wsdl_dir=str(Path(find_spec("onvif").origin).parent / "wsdl"),
                     adjust_time=cam.onvif.ignore_time_mismatch,
                     encrypt=not cam.onvif.tls_insecure,
@@ -187,6 +198,20 @@ class OnvifController:
 
         ptz: ONVIFService = await onvif.create_ptz_service()
         self.cams[camera_name]["ptz"] = ptz
+
+        try:
+            imaging: ONVIFService = await onvif.create_imaging_service()
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.debug(f"Imaging service not supported for {camera_name}: {e}")
+            imaging = None
+        self.cams[camera_name]["imaging"] = imaging
+        try:
+            video_sources = await media.GetVideoSources()
+            if video_sources and len(video_sources) > 0:
+                self.cams[camera_name]["video_source_token"] = video_sources[0].token
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.debug(f"Unable to get video sources for {camera_name}: {e}")
+            self.cams[camera_name]["video_source_token"] = None
 
         # setup continuous moving request
         move_request = ptz.create_type("ContinuousMove")
@@ -309,9 +334,15 @@ class OnvifController:
             presets = []
 
         for preset in presets:
-            self.cams[camera_name]["presets"][
-                (getattr(preset, "Name") or f"preset {preset['token']}").lower()
-            ] = preset["token"]
+            # Ensure preset name is a Unicode string and handle UTF-8 characters correctly
+            preset_name = getattr(preset, "Name") or f"preset {preset['token']}"
+
+            if isinstance(preset_name, bytes):
+                preset_name = preset_name.decode("utf-8")
+
+            # Convert to lowercase while preserving UTF-8 characters
+            preset_name_lower = preset_name.lower()
+            self.cams[camera_name]["presets"][preset_name_lower] = preset["token"]
 
         # get list of supported features
         supported_features = []
@@ -369,7 +400,22 @@ class OnvifController:
                             f"Disabling autotracking zooming for {camera_name}: Absolute zoom not supported. Exception: {e}"
                         )
 
-        # set relative pan/tilt space for autotracker
+        if (
+            self.cams[camera_name]["video_source_token"] is not None
+            and imaging is not None
+        ):
+            try:
+                imaging_capabilities = await imaging.GetImagingSettings(
+                    {"VideoSourceToken": self.cams[camera_name]["video_source_token"]}
+                )
+                if (
+                    hasattr(imaging_capabilities, "Focus")
+                    and imaging_capabilities.Focus
+                ):
+                    supported_features.append("focus")
+            except (Fault, ONVIFError, TransportError, Exception) as e:
+                logger.debug(f"Focus not supported for {camera_name}: {e}")
+
         if (
             self.config.cameras[camera_name].onvif.autotracking.enabled_in_config
             and self.config.cameras[camera_name].onvif.autotracking.enabled
@@ -394,6 +440,19 @@ class OnvifController:
                 "Zoom": True,
             }
         )
+        if (
+            "focus" in self.cams[camera_name]["features"]
+            and self.cams[camera_name]["video_source_token"]
+            and self.cams[camera_name]["imaging"] is not None
+        ):
+            try:
+                stop_request = self.cams[camera_name]["imaging"].create_type("Stop")
+                stop_request.VideoSourceToken = self.cams[camera_name][
+                    "video_source_token"
+                ]
+                await self.cams[camera_name]["imaging"].Stop(stop_request)
+            except (Fault, ONVIFError, TransportError, Exception) as e:
+                logger.warning(f"Failed to stop focus for {camera_name}: {e}")
         self.cams[camera_name]["active"] = False
 
     async def _move(self, camera_name: str, command: OnvifCommandEnum) -> None:
@@ -519,6 +578,11 @@ class OnvifController:
         self.cams[camera_name]["active"] = False
 
     async def _move_to_preset(self, camera_name: str, preset: str) -> None:
+        if isinstance(preset, bytes):
+            preset = preset.decode("utf-8")
+
+        preset = preset.lower()
+
         if preset not in self.cams[camera_name]["presets"]:
             logger.error(f"{preset} is not a valid preset for {camera_name}")
             return
@@ -602,6 +666,36 @@ class OnvifController:
 
         self.cams[camera_name]["active"] = False
 
+    async def _focus(self, camera_name: str, command: OnvifCommandEnum) -> None:
+        if self.cams[camera_name]["active"]:
+            logger.warning(
+                f"{camera_name} is already performing an action, not moving..."
+            )
+            await self._stop(camera_name)
+
+        if (
+            "focus" not in self.cams[camera_name]["features"]
+            or not self.cams[camera_name]["video_source_token"]
+            or self.cams[camera_name]["imaging"] is None
+        ):
+            logger.error(f"{camera_name} does not support ONVIF continuous focus.")
+            return
+
+        self.cams[camera_name]["active"] = True
+        move_request = self.cams[camera_name]["imaging"].create_type("Move")
+        move_request.VideoSourceToken = self.cams[camera_name]["video_source_token"]
+        move_request.Focus = {
+            "Continuous": {
+                "Speed": 0.5 if command == OnvifCommandEnum.focus_in else -0.5
+            }
+        }
+
+        try:
+            await self.cams[camera_name]["imaging"].Move(move_request)
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.warning(f"Onvif sending focus request to {camera_name} failed: {e}")
+            self.cams[camera_name]["active"] = False
+
     async def handle_command_async(
         self, camera_name: str, command: OnvifCommandEnum, param: str = ""
     ) -> None:
@@ -625,11 +719,10 @@ class OnvifController:
             elif command == OnvifCommandEnum.move_relative:
                 _, pan, tilt = param.split("_")
                 await self._move_relative(camera_name, float(pan), float(tilt), 0, 1)
-            elif (
-                command == OnvifCommandEnum.zoom_in
-                or command == OnvifCommandEnum.zoom_out
-            ):
+            elif command in (OnvifCommandEnum.zoom_in, OnvifCommandEnum.zoom_out):
                 await self._zoom(camera_name, command)
+            elif command in (OnvifCommandEnum.focus_in, OnvifCommandEnum.focus_out):
+                await self._focus(camera_name, command)
             else:
                 await self._move(camera_name, command)
         except (Fault, ONVIFError, TransportError, Exception) as e:
@@ -640,7 +733,6 @@ class OnvifController:
     ) -> None:
         """
         Handle ONVIF commands by scheduling them in the event loop.
-        This is the synchronous interface that schedules async work.
         """
         future = asyncio.run_coroutine_threadsafe(
             self.handle_command_async(camera_name, command, param), self.loop

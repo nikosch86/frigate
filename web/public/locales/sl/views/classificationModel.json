@@ -1,0 +1,75 @@
+{
+  "description": {
+    "invalidName": "Neveljavno ime. Ime lahko vsebuje črke, števila, presledke, narekovaje, podčrtaje in pomišljaje."
+  },
+  "categories": "Razredi",
+  "createCategory": {
+    "new": "Naredi nov razred"
+  },
+  "button": {
+    "renameCategory": "Preimenuj razred",
+    "deleteCategory": "Zbriši razred",
+    "deleteImages": "Zbriši slike",
+    "trainModel": "Treniraj model",
+    "deleteClassificationAttempts": "Izbriši klasifikacijske slike",
+    "addClassification": "Dodaj klasifikacijo",
+    "deleteModels": "Izbriši model",
+    "editModel": "Uredi model"
+  },
+  "toast": {
+    "success": {
+      "deletedCategory": "Izbrisan razred",
+      "deletedImage": "Zbrisane slike",
+      "trainedModel": "Uspešno treniranje modela.",
+      "trainingModel": "Uspešen začetek treniranje modela.",
+      "deletedModel_one": "Uspešno izbrisan {{count}} model",
+      "deletedModel_two": "Uspešno izbrisana {{count}} modela",
+      "deletedModel_few": "Uspešno izbrisani {{count}} modeli",
+      "deletedModel_other": "Uspešno izbrisanih {{count}} modelov",
+      "categorizedImage": "Uspešna klasifikacija slike",
+      "updatedModel": "Uspešno posodobljene podrobnosti modela",
+      "renamedCategory": "Uspešno preimenovan razred v {{name}}"
+    },
+    "error": {
+      "deleteImageFailed": "Neuspešno brisanje: {{errorMessage}}",
+      "deleteCategoryFailed": "Neuspešno brisanje razreda: {{errorMessage}}",
+      "trainingFailed": "Neuspešen začetek treniranje modela: {{errorMessage}}",
+      "deleteModelFailed": "Napaka pri brisanju modela: {{errorMessage}}"
+    }
+  },
+  "deleteCategory": {
+    "title": "Zbriši razred"
+  },
+  "deleteTrainImages": {
+    "title": "Zbriši slike za treniranje",
+    "desc": "Ali ste prepričani, da želite izbrisati {{count}} slik? Tega dejanja ni mogoče razveljaviti."
+  },
+  "renameCategory": {
+    "title": "Preimenuj razred",
+    "desc": "Vnesite novo ime za {{name}}. Model bo treba znova naučiti, da bo sprememba imena začela veljati."
+  },
+  "train": {
+    "title": "Nedavne razvrstitve",
+    "aria": "Izberi nedavne razvrstitve",
+    "titleShort": "Nedavno"
+  },
+  "categorizeImageAs": "Razvrsti sliko kot:",
+  "categorizeImage": "Razvrsti sliko",
+  "noModels": {
+    "object": {
+      "title": "Ni modelov za razvrščanje objektov"
+    }
+  },
+  "documentTitle": "Klasifikacijski modeli - fregate",
+  "details": {
+    "scoreInfo": "Razultat predstavlja povprečno stopnjo sigurnosti čez vsa zaznavynja objekta.",
+    "none": "Nobeno",
+    "unknown": "Neznano"
+  },
+  "tooltip": {
+    "trainingInProgress": "Model se trenutno trenira",
+    "noNewImages": "Novih slik za treniranje ni na voljo. Označite več slik v bazi.",
+    "noChanges": "Ni sprememb v bazi od zadnjega treniranja.",
+    "modelNotReady": "Model ni pripravljen na treniranje"
+  }
+}

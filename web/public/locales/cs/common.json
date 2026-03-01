@@ -78,7 +78,11 @@
     "formattedTimestampFilename": {
       "24hour": "dd-MM-yy-HH-mm-ss",
       "12hour": "dd-MM.yy-h-mm-ss-a"
-    }
+    },
+    "never": "Nikdy",
+    "inProgress": "Zpracovává se",
+    "invalidStartTime": "Neplatný čas začátku",
+    "invalidEndTime": "Neplatný čas konce"
   },
   "button": {
     "twoWayTalk": "Obousměrná komunikace",
@@ -115,10 +119,17 @@
     "unselect": "Zrušit výběr",
     "deleteNow": "Smazat hned",
     "next": "Další",
-    "export": "Exportovat"
+    "export": "Exportovat",
+    "continue": "Pokračovat"
   },
   "label": {
-    "back": "Jdi zpět"
+    "back": "Jdi zpět",
+    "hide": "Skrýt {{item}}",
+    "show": "Zobrazit {{item}}",
+    "ID": "ID",
+    "none": "Nic",
+    "all": "Vše",
+    "other": "Ostatní"
   },
   "unit": {
     "speed": {
@@ -128,9 +139,17 @@
     "length": {
       "feet": "stopa",
       "meters": "metry"
+    },
+    "data": {
+      "kbps": "kB/s",
+      "mbps": "MB/s",
+      "gbps": "GB/s",
+      "kbph": "kB/hodinu",
+      "mbph": "MB/hodinu",
+      "gbph": "GB/hodinu"
     }
   },
-  "selectItem": "Vyberte {{item}}",
+  "selectItem": "Vybrat {{item}}",
   "menu": {
     "documentation": {
       "label": "Dokumentace Frigate",
@@ -185,7 +204,15 @@
       "hu": "Magyar (Maďarština)",
       "pl": "Polski (Polština)",
       "th": "ไทย (Thaiština)",
-      "ca": "Català (Katalánština)"
+      "ca": "Català (Katalánština)",
+      "sl": "Slovinština (Slovinsko)",
+      "ptBR": "Português brasileiro (Brazilian Portuguese)",
+      "sr": "Српски (Serbian)",
+      "lt": "Lietuvių (Lithuanian)",
+      "bg": "Български (Bulgarian)",
+      "gl": "Galego (Galician)",
+      "id": "Bahasa Indonesia (Indonesian)",
+      "ur": "اردو (Urdu)"
     },
     "theme": {
       "highcontrast": "Vysoký kontrast",
@@ -222,7 +249,8 @@
     "uiPlayground": "UI hřiště",
     "faceLibrary": "Knihovna Obličejů",
     "configurationEditor": "Editor Konfigurace",
-    "withSystem": "Systém"
+    "withSystem": "Systém",
+    "classification": "Klasifikace"
   },
   "pagination": {
     "previous": {
@@ -261,5 +289,18 @@
     "admin": "Správce",
     "viewer": "Divák",
     "desc": "Správci mají plný přístup ke všem funkcím v uživatelském rozhraní Frigate. Diváci jsou omezeni na sledování kamer, položek přehledu a historických záznamů v UI."
+  },
+  "readTheDocumentation": "Přečtěte si dokumentaci",
+  "list": {
+    "two": "{{0}} a {{1}}",
+    "many": "{{items}}, a {{last}}",
+    "separatorWithSpace": ", "
+  },
+  "field": {
+    "optional": "Volitelné",
+    "internalID": "Interní ID Frigate používá v konfiguraci a databázi"
+  },
+  "information": {
+    "pixels": "{{area}}px"
   }
 }

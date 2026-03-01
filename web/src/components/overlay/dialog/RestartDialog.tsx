@@ -4,6 +4,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
+  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -36,6 +37,12 @@ export default function RestartDialog({
   const [restartDialogOpen, setRestartDialogOpen] = useState(isOpen);
   const [restartingSheetOpen, setRestartingSheetOpen] = useState(false);
   const [countdown, setCountdown] = useState(60);
+
+  const clearBodyPointerEvents = () => {
+    if (typeof document !== "undefined") {
+      document.body.style.pointerEvents = "";
+    }
+  };
 
   useEffect(() => {
     setRestartDialogOpen(isOpen);
@@ -74,14 +81,25 @@ export default function RestartDialog({
     <>
       <AlertDialog
         open={restartDialogOpen}
-        onOpenChange={() => {
-          setRestartDialogOpen(false);
-          onClose();
+        onOpenChange={(open) => {
+          if (!open) {
+            setRestartDialogOpen(false);
+            onClose();
+            clearBodyPointerEvents();
+          }
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            clearBodyPointerEvents();
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{t("restart.title")}</AlertDialogTitle>
+            <AlertDialogDescription className="sr-only">
+              {t("restart.description")}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>
@@ -98,7 +116,11 @@ export default function RestartDialog({
         open={restartingSheetOpen}
         onOpenChange={() => setRestartingSheetOpen(false)}
       >
-        <SheetContent side="top" onInteractOutside={(e) => e.preventDefault()}>
+        <SheetContent
+          side="top"
+          onInteractOutside={(e) => e.preventDefault()}
+          className="[&>button:first-of-type]:hidden"
+        >
           <div className="flex flex-col items-center">
             <ActivityIndicator />
             <SheetHeader className="mt-5 text-center">

@@ -1,6 +1,6 @@
 {
   "imageEntry": {
-    "dropInstructions": "Přetáhněte obrázek zde, nebo klikněte na výběr",
+    "dropInstructions": "Přetáhněte obrázek sem, nebo klikněte na výběr",
     "maxSize": "Maximální velikost: {{size}}MB",
     "dropActive": "Přetáhněte obrázek zde…",
     "validation": {
@@ -10,7 +10,7 @@
   "createFaceLibrary": {
     "new": "Vytvořit nový obličej",
     "desc": "Vytvořit novou kolekci",
-    "nextSteps": "Chcete-li vybudovat pevný základ:<li>Použijte kartu Trénování k výběru a trénování na snímcích pro každou detekovanou osobu.</li><li>Pro nejlepší výsledky se zaměřte na přímé snímky; vyhněte se trénování snímků, které zachycují obličeje pod úhlem.</li></ul>",
+    "nextSteps": "Chcete-li vybudovat pevný základ:<li>Použijte kartu Nedávná Rozpoznání k výběru a trénování na snímcích pro každou detekovanou osobu.</li><li>Pro nejlepší výsledky se zaměřte na přímé snímky; vyhněte se trénování snímků, které zachycují obličeje pod úhlem.</li></ul>",
     "title": "Vytvořit kolekci"
   },
   "details": {
@@ -36,14 +36,15 @@
     "desc": "Skutečně chcete vymazat kolekci {{name}}? Toto trvale vymaže všechny přiřazené obličeje."
   },
   "train": {
-    "title": "Trénovat",
+    "title": "Nedávná rozpoznání",
     "empty": "Nejsou zde žádné předchozí pokusy o rozpoznání obličeje",
-    "aria": "Vybrat trénink"
+    "aria": "Vybrat poslední rozpoznávání",
+    "titleShort": "Nedávný"
   },
   "description": {
-    "addFace": "Prúvodce přidání nové kolekce do Knižnice obličejů.",
+    "addFace": "Přidejte novou kolekci do Knihovny obličejů nahráním prvního obrázku.",
     "placeholder": "Zadejte název pro tuto kolekci",
-    "invalidName": "Neplatný název. Názvy mohou obsahovat pouze písmena, čísla, mezery, apostrofy, podtržítka a pomlčky."
+    "invalidName": "Neplatné jméno. Jméno můžou obsahovat pouze písmena, čísla, mezery, apostrofy, podtržítka a spojovníky."
   },
   "documentTitle": "Knihovna obličejů - Frigate",
   "uploadFaceImage": {
@@ -76,7 +77,7 @@
       "deletedName_one": "{{count}} obličej byl úspěšně odstraněn.",
       "deletedName_few": "{{count}} tváře byly úspěšně odstraněny.",
       "deletedName_other": "{{count}} tváře byly úspěšně odstraněny.",
-      "updatedFaceScore": "Úspěšně aktualizováno skóre obličeje.",
+      "updatedFaceScore": "Úspěšně aktualizováno skóre obličeje na {{name}} ({{score}}).",
       "addFaceLibrary": "{{name}} byl(a) úspěšně přidán(a) do Knihovny obličejů!"
     },
     "error": {
