@@ -762,8 +762,10 @@ class PtzAutoTracker:
             logger.debug(f"{camera}: Distance {effective_distance:.4f} too small, skipping move")
             return 0.0, 0.0, 0.0
 
-        velocity_magnitude = 0.3
-        if effective_distance > 0.9:
+        # Proportional velocity for small corrections to prevent overshoot
+        if effective_distance < 0.2:
+            velocity_magnitude = max(0.15, effective_distance * 1.5)
+        elif effective_distance > 0.9:
             velocity_magnitude = 0.5
         elif effective_distance > 0.7:
             velocity_magnitude = 0.4
@@ -1287,12 +1289,28 @@ class PtzAutoTracker:
         # larger objects should lower the threshold, smaller objects should raise it
         scaling_factor = 1 - np.log(max_obj / max_frame)
 
+        # Dampen scaling for ContinuousMove - the original range is too wide,
+        # causing huge thresholds for small/far objects that lead to delayed
+        # responses and large corrections ContinuousMove can't execute precisely.
+        # Dampening preserves size relationship: large objects still get tighter thresholds.
+        if self.movement_mode.get(camera) == "continuous_timed":
+            scaling_factor = 1 + (scaling_factor - 1) * 0.6
+
         percentage = (
             0.08
             if camera_config.onvif.autotracking.movement_weights
             and self.tracked_object_metrics[camera].get("valid_velocity", False)
             else 0.03
         )
+
+        # ContinuousMove cameras need a wider dead zone since
+        # timed velocity control can't match RelativeMove precision
+        if (
+            not camera_config.onvif.autotracking.movement_weights
+            and self.movement_mode.get(camera) == "continuous_timed"
+        ):
+            percentage = max(percentage, 0.10)
+
         distance_threshold = percentage * max_frame * scaling_factor
 
         logger.debug(f"{camera}: Distance threshold: {distance_threshold}")
@@ -1486,13 +1504,24 @@ class PtzAutoTracker:
             _, _, duration = self._calculate_continuous_move_params(camera, pan, tilt)
             predicted_movement_time = duration
 
-            if predicted_movement_time > 0 and np.any(average_velocity):
+            # Ramp prediction strength with distance from center.
+            # Zero at center (prevents hunting for stationary objects),
+            # full prediction at ramp_distance+.
+            # Larger objects get faster ramp (lower ramp_distance) because
+            # they exit the frame faster and need earlier prediction.
+            effective_distance = np.sqrt(pan**2 + tilt**2)
+            obj_width = obj.obj_data["box"][2] - obj.obj_data["box"][0]
+            obj_height = obj.obj_data["box"][3] - obj.obj_data["box"][1]
+            size_ratio = max(obj_width, obj_height) / max(camera_width, camera_height)
+            ramp_distance = 0.15 + (1 - size_ratio) * 0.2
+            prediction_scale = np.clip(effective_distance / ramp_distance, 0.0, 1.0)
+            if predicted_movement_time > 0 and np.any(average_velocity) and prediction_scale > 0:
                 # this box could exceed the frame boundaries if velocity is high
                 # but we'll handle that in _enqueue_move() as two separate moves
                 current_box = np.array(obj.obj_data["box"])
                 predicted_box = (
                     current_box
-                    + camera_fps * predicted_movement_time * average_velocity
+                    + prediction_scale * camera_fps * predicted_movement_time * average_velocity
                 )
 
                 predicted_box = np.round(predicted_box).astype(int)
@@ -1757,6 +1786,38 @@ class PtzAutoTracker:
                     self.ptz_metrics[camera].start_time.value,
                     self.ptz_metrics[camera].stop_time.value,
                 ):
+                    # For ContinuousMove, wait for pipeline to deliver fresh
+                    # post-move frames before making new corrections.
+                    # Frames arriving too soon after stop_time were captured
+                    # before/during the move and show stale object positions.
+                    # Reduce settling when object is near frame edge to avoid
+                    # losing tracking of fast-moving close objects.
+                    stop_time = self.ptz_metrics[camera].stop_time.value
+                    if (
+                        self.movement_mode.get(camera) == "continuous_timed"
+                        and stop_time > 0
+                    ):
+                        bb_left, bb_top, bb_right, bb_bottom = obj.obj_data["box"]
+                        camera_width = camera_config.frame_shape[1]
+                        camera_height = camera_config.frame_shape[0]
+                        edge_margin = 0.07
+                        near_edge = (
+                            bb_left < edge_margin * camera_width
+                            or bb_right > (1 - edge_margin) * camera_width
+                            or bb_top < edge_margin * camera_height
+                            or bb_bottom > (1 - edge_margin) * camera_height
+                        )
+                        settle_frames = 1.0 if near_edge else 3.0
+                        settle_time = settle_frames / camera_config.detect.fps
+                        if obj.obj_data["frame_time"] < stop_time + settle_time:
+                            logger.debug(
+                                f"{camera}: Post-move settling "
+                                f"({'urgent' if near_edge else 'normal'}) - "
+                                f"skipping frame {obj.obj_data['frame_time']:.3f}, "
+                                f"waiting until {stop_time + settle_time:.3f}"
+                            )
+                            return
+
                     if self.tracked_object_metrics[camera].get("below_distance_threshold", False):
                         logger.debug(
                             f"{camera}: Existing object (do NOT move ptz): {obj.obj_data['id']} {obj.obj_data['box']} {obj.obj_data['frame_time']}"
