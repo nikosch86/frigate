@@ -9,7 +9,11 @@
   "empty": {
     "alert": "Não existe nenhum alerta para revisar",
     "detection": "Não há nenhuma detecção para revisar",
-    "motion": "Nenhum dado de movimento encontrado"
+    "motion": "Nenhum dado de movimento encontrado",
+    "recordingsDisabled": {
+      "title": "As gravações devem estar habilitadas",
+      "description": "A revisão de itens só pode ser criada para uma câmera quando a gravação está habilitada."
+    }
   },
   "timeline": "Linha do tempo",
   "timeline.aria": "Selecione a linha do tempo",
@@ -26,13 +30,37 @@
   },
   "markTheseItemsAsReviewed": "Marque estes itens como revisados",
   "newReviewItems": {
-    "button": "Novos Itens para Revisão",
+    "button": "Novos Itens para Revisar",
     "label": "Ver novos itens para revisão"
   },
   "selected_one": "{{count}} selecionado(s)",
-  "documentTitle": "Revisão - Frigate",
+  "documentTitle": "Revisar - Frigate",
   "markAsReviewed": "Marcar como Revisado",
   "selected_other": "{{count}} selecionado(s)",
   "camera": "Câmera",
-  "detected": "detectado"
+  "detected": "detectado",
+  "suspiciousActivity": "Atividade Suspeita",
+  "threateningActivity": "Atividade de Ameaça",
+  "detail": {
+    "noDataFound": "Nenhum dado de detalhe para revisar",
+    "aria": "Alternar visualização de detalhe",
+    "trackedObject_one": "{{count}} objeto(s)",
+    "trackedObject_other": "{{count}} objetos",
+    "noObjectDetailData": "Nenhum dado de detalhe de objeto disponível.",
+    "label": "Detalhe",
+    "settings": "Configurações de visualização detalhada",
+    "alwaysExpandActive": {
+      "title": "Expandir sempre o modo ativo",
+      "desc": "Sempre expandir os detalhes do objeto do item de revisão ativo quando disponíveis."
+    }
+  },
+  "objectTrack": {
+    "trackedPoint": "Ponto rastreado",
+    "clickToSeek": "Clique para ir para esse horário"
+  },
+  "zoomIn": "Ampliar",
+  "zoomOut": "Diminuir o zoom",
+  "select_all": "Todos",
+  "normalActivity": "Normal",
+  "needsReview": "Precisa de revisão"
 }

@@ -18,6 +18,13 @@ export type ReviewData = {
   sub_labels?: string[];
   significant_motion_areas: number[];
   zones: string[];
+  metadata?: {
+    title: string;
+    scene: string;
+    confidence: number;
+    potential_threat_level?: number;
+    other_concerns?: string[];
+  };
 };
 
 export type SegmentedReviewData =
@@ -73,3 +80,20 @@ export type ConsolidatedSegmentData = {
 };
 
 export type TimelineZoomDirection = "in" | "out" | null;
+
+export type ZoomLevel = {
+  segmentDuration: number;
+  timestampSpread: number;
+};
+
+export enum ThreatLevel {
+  NORMAL = 0,
+  NEEDS_REVIEW = 1,
+  SECURITY_CONCERN = 2,
+}
+
+export const THREAT_LEVEL_LABELS: Record<ThreatLevel, string> = {
+  [ThreatLevel.NORMAL]: "Normal",
+  [ThreatLevel.NEEDS_REVIEW]: "Needs review",
+  [ThreatLevel.SECURITY_CONCERN]: "Security concern",
+};

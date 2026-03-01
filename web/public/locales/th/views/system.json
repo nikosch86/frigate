@@ -55,5 +55,16 @@
   "stats": {
     "cameraIsOffline": "{{camera}} ออฟไลน์",
     "detectIsVerySlow": "{{detect}} ช้ามาก ({{speed}} มิลลิวินาที)"
+  },
+  "documentTitle": {
+    "cameras": "ข้อมูลกล้อง - Frigate",
+    "storage": "สถิติคลังข้อมูล - Frigate",
+    "general": "สถิติทั่วไป - Frigate",
+    "enrichments": "สถิติเพิ่มเติม - Frigate",
+    "logs": {
+      "frigate": "Frigate Logs - Frigate",
+      "go2rtc": "Logs ของ Go2RTC - Frigate",
+      "nginx": "Logs ของ Nginx - Frigate"
+    }
   }
 }

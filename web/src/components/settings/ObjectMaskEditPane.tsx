@@ -178,6 +178,19 @@ export default function ObjectMaskEditPane({
         filteredMask.splice(index, 0, coordinates);
       }
 
+      // prevent duplicating global masks under specific object filters
+      if (!globalMask) {
+        const globalObjectMasksArray = Array.isArray(cameraConfig.objects.mask)
+          ? cameraConfig.objects.mask
+          : cameraConfig.objects.mask
+            ? [cameraConfig.objects.mask]
+            : [];
+
+        filteredMask = filteredMask.filter(
+          (mask) => !globalObjectMasksArray.includes(mask),
+        );
+      }
+
       queryString = filteredMask
         .map((pointsArray) => {
           const coordinates = flattenPoints(parseCoordinates(pointsArray)).join(
@@ -196,6 +209,7 @@ export default function ObjectMaskEditPane({
       axios
         .put(`config/set?${queryString}`, {
           requires_restart: 0,
+          update_topic: `config/cameras/${polygon.camera}/objects`,
         })
         .then((res) => {
           if (res.status === 200) {

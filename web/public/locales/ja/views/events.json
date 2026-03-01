@@ -1,7 +1,67 @@
 {
   "detections": "検出",
   "motion": {
-    "label": "動作"
+    "label": "モーション",
+    "only": "モーションのみ"
   },
-  "alerts": "アラート"
+  "alerts": "アラート",
+  "empty": {
+    "detection": "レビューする検出はありません",
+    "alert": "レビューするアラートはありません",
+    "motion": "モーションデータは見つかりません",
+    "recordingsDisabled": {
+      "title": "録画を有効にする必要があります",
+      "description": "カメラの録画が有効になっている場合にのみ、そのカメラに対してレビューアイテムを作成できます。"
+    }
+  },
+  "camera": "カメラ",
+  "allCameras": "全カメラ",
+  "timeline": "タイムライン",
+  "timeline.aria": "タイムラインを選択",
+  "events": {
+    "label": "イベント",
+    "aria": "イベントを選択",
+    "noFoundForTimePeriod": "この期間のイベントは見つかりません。"
+  },
+  "documentTitle": "レビュー - Frigate",
+  "recordings": {
+    "documentTitle": "録画 - Frigate"
+  },
+  "calendarFilter": {
+    "last24Hours": "直近24時間"
+  },
+  "markAsReviewed": "レビュー済みにする",
+  "markTheseItemsAsReviewed": "これらの項目をレビュー済みにする",
+  "newReviewItems": {
+    "label": "新しいレビュー項目を表示",
+    "button": "レビューすべき新規項目"
+  },
+  "selected_one": "{{count}} 件選択",
+  "selected_other": "{{count}} 件選択",
+  "detected": "検出",
+  "suspiciousActivity": "不審なアクティビティ",
+  "threateningActivity": "脅威となるアクティビティ",
+  "zoomIn": "ズームイン",
+  "zoomOut": "ズームアウト",
+  "detail": {
+    "label": "詳細",
+    "noDataFound": "確認する詳細データはありません",
+    "aria": "詳細表示を切り替え",
+    "trackedObject_one": "{{count}} 件のオブジェクト",
+    "trackedObject_other": "{{count}} 件のオブジェクト",
+    "noObjectDetailData": "オブジェクトの詳細データがありません。",
+    "settings": "詳細表示設定",
+    "alwaysExpandActive": {
+      "title": "アクティブ項目を常に展開",
+      "desc": "利用可能な場合、アクティブなレビュー項目のオブジェクト詳細を常に展開する。"
+    }
+  },
+  "objectTrack": {
+    "trackedPoint": "追跡ポイント",
+    "clickToSeek": "クリックしてこの時点に移動"
+  },
+  "select_all": "すべて",
+  "normalActivity": "通常",
+  "needsReview": "要確認",
+  "securityConcern": "セキュリティ上の懸念"
 }

@@ -1,10 +1,7 @@
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import useKeyboardListener from "@/hooks/use-keyboard-listener";
-import {
-  useHashState,
-  usePersistedOverlayState,
-  useSearchEffect,
-} from "@/hooks/use-overlay-state";
+import { useHashState, useSearchEffect } from "@/hooks/use-overlay-state";
+import { useUserPersistedOverlayState } from "@/hooks/use-overlay-state";
 import { FrigateConfig } from "@/types/frigateConfig";
 import LiveBirdseyeView from "@/views/live/LiveBirdseyeView";
 import LiveCameraView from "@/views/live/LiveCameraView";
@@ -13,25 +10,32 @@ import { useTranslation } from "react-i18next";
 
 import { useEffect, useMemo, useRef } from "react";
 import useSWR from "swr";
+import { useAllowedCameras } from "@/hooks/use-allowed-cameras";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 
 function Live() {
   const { t } = useTranslation(["views/live"]);
   const { data: config } = useSWR<FrigateConfig>("config");
+  const isAdmin = useIsAdmin();
 
   // selection
 
   const [selectedCameraName, setSelectedCameraName] = useHashState();
-  const [cameraGroup, setCameraGroup] = usePersistedOverlayState(
+  const [cameraGroup, setCameraGroup, loaded] = useUserPersistedOverlayState(
     "cameraGroup",
     "default" as string,
   );
 
   useSearchEffect("group", (cameraGroup) => {
-    if (config && cameraGroup) {
+    if (config && cameraGroup && loaded) {
       const group = config.camera_groups[cameraGroup];
 
       if (group) {
         setCameraGroup(cameraGroup);
+        // return false so that url cleanup doesn't occur here.
+        // will be cleaned up by usePersistedOverlayState in the
+        // camera group selector so that the icon switches correctly
+        return false;
       }
 
       return true;
@@ -49,14 +53,16 @@ function Live() {
 
   useKeyboardListener(["f"], (key, modifiers) => {
     if (!modifiers.down) {
-      return;
+      return true;
     }
 
     switch (key) {
       case "f":
         toggleFullscreen();
-        break;
+        return true;
     }
+
+    return false;
   });
 
   // document title
@@ -81,7 +87,14 @@ function Live() {
 
   // settings
 
+  const allowedCameras = useAllowedCameras();
+
   const includesBirdseye = useMemo(() => {
+    // Restricted users should never have access to birdseye
+    if (!isAdmin) {
+      return false;
+    }
+
     if (
       config &&
       Object.keys(config.camera_groups).length &&
@@ -93,7 +106,7 @@ function Live() {
     } else {
       return false;
     }
-  }, [config, cameraGroup]);
+  }, [config, cameraGroup, isAdmin]);
 
   const cameras = useMemo(() => {
     if (!config) {
@@ -111,18 +124,30 @@ function Live() {
         .filter(
           (conf) => conf.enabled_in_config && group.cameras.includes(conf.name),
         )
+        .filter((cam) => allowedCameras.includes(cam.name))
         .sort((aConf, bConf) => aConf.ui.order - bConf.ui.order);
     }
 
     return Object.values(config.cameras)
       .filter((conf) => conf.ui.dashboard && conf.enabled_in_config)
+      .filter((cam) => allowedCameras.includes(cam.name))
       .sort((aConf, bConf) => aConf.ui.order - bConf.ui.order);
-  }, [config, cameraGroup]);
+  }, [config, cameraGroup, allowedCameras]);
 
-  const selectedCamera = useMemo(
-    () => cameras.find((cam) => cam.name == selectedCameraName),
-    [cameras, selectedCameraName],
-  );
+  const selectedCamera = useMemo(() => {
+    if (!config || !selectedCameraName || selectedCameraName === "birdseye") {
+      return undefined;
+    }
+    const camera = config.cameras[selectedCameraName];
+    if (
+      camera &&
+      allowedCameras.includes(selectedCameraName) &&
+      camera.enabled_in_config
+    ) {
+      return camera;
+    }
+    return undefined;
+  }, [config, selectedCameraName, allowedCameras]);
 
   return (
     <div className="size-full" ref={mainRef}>
@@ -131,9 +156,11 @@ function Live() {
           supportsFullscreen={supportsFullScreen}
           fullscreen={fullscreen}
           toggleFullscreen={toggleFullscreen}
+          onSelectCamera={setSelectedCameraName}
         />
       ) : selectedCamera ? (
         <LiveCameraView
+          key={selectedCameraName}
           config={config}
           camera={selectedCamera}
           supportsFullscreen={supportsFullScreen}

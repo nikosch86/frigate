@@ -25,7 +25,8 @@
       "max_speed": "Maximalgeschwindigkeit",
       "time_range": "Zeitraum",
       "labels": "Labels",
-      "sub_labels": "Unterlabels"
+      "sub_labels": "Unterlabels",
+      "attributes": "Attribute"
     },
     "toast": {
       "error": {
@@ -58,7 +59,7 @@
       "title": "Wie man Textfilter verwendet"
     },
     "searchType": {
-      "thumbnail": "Miniaturansicht",
+      "thumbnail": "Vorschaubild",
       "description": "Beschreibung"
     }
   },

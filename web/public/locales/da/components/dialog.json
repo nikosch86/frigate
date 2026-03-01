@@ -1,1 +1,28 @@
-{}
+{
+  "restart": {
+    "title": "Er du sikker på at du vil genstarte Frigate?",
+    "button": "Genstart",
+    "restarting": {
+      "title": "Frigate genstarter",
+      "button": "Gennemtving genindlæsning nu",
+      "content": "Denne side genindlæses om {{countdown}} sekunder."
+    },
+    "description": "Dette vil kortvarigt stoppe Frigate under genstart."
+  },
+  "explore": {
+    "plus": {
+      "submitToPlus": {
+        "label": "Indsend til Frigate+",
+        "desc": "Objekter på steder, du ønsker at undgå, er ikke falske positiver. Hvis du indsender dem som falske positiver, vil det forvirre modellen."
+      },
+      "review": {
+        "question": {
+          "label": "Bekræft denne etiket til Frigate Plus",
+          "ask_a": "Er dette objekt et <code>{{label}}</code>?",
+          "ask_an": "Er dette objekt en <code>{{label}}</code>?",
+          "ask_full": "Er dette objekt en <code>{{untranslatedLabel}}</code> ({{translatedLabel}})?"
+        }
+      }
+    }
+  }
+}

@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useApiHost } from "@/api";
 import { isCurrentHour } from "@/utils/dateUtil";
-import { ReviewSegment } from "@/types/review";
+import {
+  ReviewSegment,
+  ThreatLevel,
+  THREAT_LEVEL_LABELS,
+} from "@/types/review";
 import { getIconForLabel } from "@/utils/iconUtil";
 import TimeAgo from "../dynamic/TimeAgo";
 import useSWR from "swr";
@@ -16,12 +20,16 @@ import ImageLoadingIndicator from "../indicators/ImageLoadingIndicator";
 import useContextMenu from "@/hooks/use-contextmenu";
 import ActivityIndicator from "../indicators/activity-indicator";
 import { TimeRange } from "@/types/timeline";
-import { capitalizeFirstLetter, capitalizeAll } from "@/utils/stringUtil";
+import { capitalizeAll } from "@/utils/stringUtil";
 import { cn } from "@/lib/utils";
 import { InProgressPreview, VideoPreview } from "../preview/ScrubbablePreview";
 import { Preview } from "@/types/preview";
 import { baseUrl } from "@/api/baseUrl";
 import { useTranslation } from "react-i18next";
+import { FaExclamationTriangle } from "react-icons/fa";
+import { MdOutlinePersonSearch } from "react-icons/md";
+import { getTranslatedLabel } from "@/utils/i18n";
+import { formatList } from "@/utils/stringUtil";
 
 type PreviewPlayerProps = {
   review: ReviewSegment;
@@ -42,7 +50,7 @@ export default function PreviewThumbnailPlayer({
   onClick,
   onTimeUpdate,
 }: PreviewPlayerProps) {
-  const { t } = useTranslation(["components/player"]);
+  const { t } = useTranslation(["components/player", "views/events"]);
   const apiHost = useApiHost();
   const { data: config } = useSWR<FrigateConfig>("config");
   const [imgRef, imgLoaded, onImgLoad] = useImageLoaded();
@@ -175,6 +183,12 @@ export default function PreviewThumbnailPlayer({
     config?.ui?.timezone,
   );
 
+  const getEventType = (text: string) => {
+    if (review.data.sub_labels?.includes(text)) return "manual";
+    if (review.data.audio.includes(text)) return "audio";
+    return "object";
+  };
+
   return (
     <div
       className="relative size-full cursor-pointer"
@@ -234,7 +248,12 @@ export default function PreviewThumbnailPlayer({
             )}
           />
         )}
-        <div className={cn("absolute left-0 top-2", !isSafari && "z-40")}>
+        <div
+          className={cn(
+            "absolute left-0 top-2 flex gap-2",
+            !isSafari && "z-40",
+          )}
+        >
           <div className="mx-3 mb-1 text-xs font-medium text-white">
             {capitalizeAll(review.camera)}
           </div>
@@ -245,7 +264,7 @@ export default function PreviewThumbnailPlayer({
               onMouseLeave={() => setTooltipHovering(false)}
             >
               <TooltipTrigger asChild>
-                <div className="mx-3 pb-1 text-sm text-white">
+                <div className="ml-3 pb-1 text-sm text-white">
                   {(review.severity == "alert" ||
                     review.severity == "detection") && (
                     <>
@@ -253,11 +272,22 @@ export default function PreviewThumbnailPlayer({
                         className={`flex items-start justify-between space-x-1 ${playingBack ? "hidden" : ""} bg-gradient-to-br ${review.has_been_reviewed ? "bg-green-600 from-green-600 to-green-700" : "bg-gray-500 from-gray-400 to-gray-500"} z-0`}
                         onClick={() => onClick(review, false, true)}
                       >
-                        {review.data.objects.sort().map((object) => {
-                          return getIconForLabel(object, "size-3 text-white");
-                        })}
+                        {review.data.objects
+                          .sort()
+                          .map((object, idx) =>
+                            getIconForLabel(
+                              object,
+                              "object",
+                              "size-3 text-white",
+                              `${object}-${idx}`,
+                            ),
+                          )}
                         {review.data.audio.map((audio) => {
-                          return getIconForLabel(audio, "size-3 text-white");
+                          return getIconForLabel(
+                            audio,
+                            "audio",
+                            "size-3 text-white",
+                          );
                         })}
                       </Chip>
                     </>
@@ -265,23 +295,79 @@ export default function PreviewThumbnailPlayer({
                 </div>
               </TooltipTrigger>
             </div>
-            <TooltipContent className="smart-capitalize">
-              {[
-                ...new Set([
-                  ...(review.data.objects || []),
-                  ...(review.data.sub_labels || []),
-                  ...(review.data.audio || []),
-                ]),
-              ]
-                .filter(
-                  (item) => item !== undefined && !item.includes("-verified"),
-                )
-                .map((text) => capitalizeFirstLetter(text))
-                .sort()
-                .join(", ")
-                .replaceAll("-verified", "")}
+            <TooltipContent>
+              {review.data.metadata
+                ? review.data.metadata.title
+                : formatList(
+                    [
+                      ...new Set([
+                        ...(review.data.objects || []),
+                        ...(review.data.sub_labels || []),
+                        ...(review.data.audio || []),
+                      ]),
+                    ]
+                      .filter(
+                        (item) =>
+                          item !== undefined && !item.includes("-verified"),
+                      )
+                      .map((text) =>
+                        getTranslatedLabel(text, getEventType(text)),
+                      )
+                      .sort(),
+                  )}
             </TooltipContent>
           </Tooltip>
+          {!!(
+            review.data.metadata?.potential_threat_level &&
+            !review.has_been_reviewed
+          ) && (
+            <Tooltip>
+              <div
+                className="flex"
+                onMouseEnter={() => setTooltipHovering(true)}
+                onMouseLeave={() => setTooltipHovering(false)}
+              >
+                <TooltipTrigger asChild>
+                  <div className="pb-1 text-sm text-white">
+                    {(review.severity == "alert" ||
+                      review.severity == "detection") && (
+                      <>
+                        <Chip
+                          className={`flex items-start justify-between space-x-1 ${playingBack ? "hidden" : ""} z-0 bg-gray-500 bg-gradient-to-br from-gray-400 to-gray-500`}
+                          onClick={() => onClick(review, false, true)}
+                        >
+                          {review.data.metadata.potential_threat_level == 1 ? (
+                            <MdOutlinePersonSearch className="size-3" />
+                          ) : (
+                            <FaExclamationTriangle className="size-3" />
+                          )}
+                        </Chip>
+                      </>
+                    )}
+                  </div>
+                </TooltipTrigger>
+              </div>
+              <TooltipContent className="smart-capitalize">
+                {(() => {
+                  const threatLevel =
+                    review.data.metadata.potential_threat_level ?? 0;
+                  switch (threatLevel) {
+                    case ThreatLevel.NEEDS_REVIEW:
+                      return t("needsReview", { ns: "views/events" });
+                    case ThreatLevel.SECURITY_CONCERN:
+                      return t("securityConcern", { ns: "views/events" });
+                    default:
+                      return (
+                        THREAT_LEVEL_LABELS[threatLevel as ThreatLevel] ||
+                        t("details.unknown", {
+                          ns: "views/classificationModel",
+                        })
+                      );
+                  }
+                })()}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
         {!playingBack && (
           <div

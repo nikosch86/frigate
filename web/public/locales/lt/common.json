@@ -47,20 +47,69 @@
     "second_few": "{{time}} sekundės",
     "second_other": "{{time}} sekundžių",
     "formattedTimestamp": {
-      "12hour": ""
-    }
+      "12hour": "MMM d, h:mm:ss aaa",
+      "24hour": "MMM d, HH:mm:ss"
+    },
+    "formattedTimestamp2": {
+      "12hour": "MM/dd h:mm:ssa",
+      "24hour": "d MMM HH:mm:ss"
+    },
+    "formattedTimestampHourMinute": {
+      "12hour": "h:mm aaa",
+      "24hour": "HH:mm"
+    },
+    "formattedTimestampHourMinuteSecond": {
+      "12hour": "h:mm:ss aaa",
+      "24hour": "HH:mm:ss"
+    },
+    "formattedTimestampMonthDayHourMinute": {
+      "12hour": "MMM d, h:mm aaa",
+      "24hour": "MMM d, HH:mm"
+    },
+    "formattedTimestampMonthDayYear": {
+      "12hour": "MMM d, yyyy",
+      "24hour": "MMM d, yyyy"
+    },
+    "formattedTimestampMonthDayYearHourMinute": {
+      "12hour": "MMM d yyyy, h:mm aaa",
+      "24hour": "MMM d yyyy, HH:mm"
+    },
+    "formattedTimestampMonthDay": "MMM d",
+    "formattedTimestampFilename": {
+      "12hour": "MM-dd-yy-h-mm-ss-a",
+      "24hour": "MM-dd-yy-HH-mm-ss"
+    },
+    "inProgress": "Apdorojama",
+    "invalidStartTime": "Netinkamas pradžios laikas",
+    "invalidEndTime": "Netinkamas pabaigos laikas",
+    "never": "Niekada"
   },
   "unit": {
     "speed": {
-      "kph": "kmh"
+      "kph": "kmh",
+      "mph": "mph"
     },
     "length": {
       "feet": "pėdos",
       "meters": "metrai"
+    },
+    "data": {
+      "kbps": "kB/s",
+      "mbps": "MB/s",
+      "gbps": "GB/s",
+      "kbph": "kB/val",
+      "mbph": "MB/val",
+      "gbph": "GB/val"
     }
   },
   "label": {
-    "back": "Eiti atgal"
+    "back": "Eiti atgal",
+    "hide": "Slėpti {{item}}",
+    "show": "Rodyti {{item}}",
+    "ID": "ID",
+    "none": "Nėra",
+    "all": "Visi",
+    "other": "Kiti"
   },
   "button": {
     "apply": "Pritaikyti",
@@ -82,21 +131,23 @@
     "pictureInPicture": "Paveikslėlis Paveiksle",
     "twoWayTalk": "Dvikryptis Kalbėjimas",
     "cameraAudio": "Kameros Garsas",
-    "on": "",
+    "on": "ON",
     "edit": "Redaguoti",
     "copyCoordinates": "Kopijuoti koordinates",
     "delete": "Ištrinti",
     "yes": "Taip",
     "no": "Ne",
     "download": "Atsisiųsti",
-    "info": "",
+    "info": "Info",
     "suspended": "Pristatbdytas",
     "unsuspended": "Atnaujinti",
     "play": "Groti",
     "unselect": "Atžymėti",
     "export": "Eksportuoti",
     "deleteNow": "Trinti Dabar",
-    "next": "Kitas"
+    "next": "Kitas",
+    "off": "OFF",
+    "continue": "Tęsti"
   },
   "menu": {
     "system": "Sistema",
@@ -131,10 +182,24 @@
       "hu": "Vengrų",
       "fi": "Suomių",
       "da": "Danų",
-      "sk": "Slovėnų",
+      "sk": "Slovakų",
       "withSystem": {
         "label": "Kalbai naudoti sistemos nustatymus"
-      }
+      },
+      "hi": "Hindi",
+      "ptBR": "Brazilietiška Portugalų",
+      "ko": "Korėjiečių",
+      "he": "Hebrajų",
+      "yue": "Kantoniečių",
+      "th": "Tailandiečių",
+      "ca": "Kataloniečių",
+      "sr": "Serbų",
+      "sl": "Slovėnų",
+      "lt": "Lietuvių",
+      "bg": "Bulgarų",
+      "gl": "Galician",
+      "id": "Indonesian",
+      "ur": "Urdu"
     },
     "appearance": "Išvaizda",
     "darkMode": {
@@ -182,7 +247,9 @@
       "anonymous": "neidentifikuotas",
       "logout": "atsijungti",
       "setPassword": "Nustatyti Slaptažodi"
-    }
+    },
+    "uiPlayground": "UI Playground",
+    "classification": "Klasifikavimas"
   },
   "toast": {
     "copyUrlToClipboard": "URL nukopijuotas į atmintį.",
@@ -209,6 +276,31 @@
     "next": {
       "title": "Sekantis",
       "label": "Eiti į sekantį puslapį"
-    }
+    },
+    "more": "Daugiau puslapių"
+  },
+  "accessDenied": {
+    "documentTitle": "Priegai Nesuteikta - Frigate",
+    "title": "Prieiga Nesuteikta",
+    "desc": "Jūs neturite leidimo žiūrėti šį puslapį."
+  },
+  "notFound": {
+    "documentTitle": "Nerasta - Frigate",
+    "title": "404",
+    "desc": "Puslapis nerastas"
+  },
+  "selectItem": "Pasirinkti {{item}}",
+  "readTheDocumentation": "Skaityti dokumentaciją",
+  "information": {
+    "pixels": "{{area}}px"
+  },
+  "list": {
+    "two": "{{0}} ir {{1}}",
+    "many": "{{items}}, ir {{last}}",
+    "separatorWithSpace": ", "
+  },
+  "field": {
+    "optional": "Pasirinktinis",
+    "internalID": "Vidinį ID Frigate naudoja konfiguracijoje ir duombazėje"
   }
 }

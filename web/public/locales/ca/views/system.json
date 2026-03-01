@@ -41,7 +41,8 @@
       "title": "Detectors",
       "inferenceSpeed": "Velocitat d'inferència del detector",
       "cpuUsage": "Ús de CPU del detector",
-      "temperature": "Temperatura del detector"
+      "temperature": "Temperatura del detector",
+      "cpuUsageInformation": "CPU usada en la preparació d'entrades i sortides desde/cap als models de detecció. Aquest valor no mesura l'utilització d'inferència, encara que usis una GPU o accelerador."
     },
     "title": "General",
     "hardwareInfo": {
@@ -75,12 +76,24 @@
         }
       },
       "npuUsage": "Ús de NPU",
-      "npuMemory": "Memòria de NPU"
+      "npuMemory": "Memòria de NPU",
+      "intelGpuWarning": {
+        "title": "Avís d'estadístiques de la GPU d'Intel",
+        "message": "Estadístiques de GPU no disponibles",
+        "description": "Aquest és un error conegut en les eines d'informació de les estadístiques de GPU d'Intel (intel.gpu.top) on es trencarà i retornarà repetidament un ús de GPU del 0% fins i tot en els casos en què l'acceleració del maquinari i la detecció d'objectes s'executen correctament a la (i)GPU. Això no és un error de fragata. Podeu reiniciar l'amfitrió per a corregir temporalment el problema i confirmar que la GPU funciona correctament. Això no afecta el rendiment."
+      }
     },
     "otherProcesses": {
       "title": "Altres processos",
       "processMemoryUsage": "Ús de memòria de procés",
-      "processCpuUsage": "Ús de la CPU del procés"
+      "processCpuUsage": "Ús de la CPU del procés",
+      "series": {
+        "recording": "gravant",
+        "review_segment": "segment de revisió",
+        "embeddings": "incrustacions",
+        "audio_detector": "detector d'àudio",
+        "go2rtc": "go2rtc"
+      }
     }
   },
   "storage": {
@@ -102,7 +115,11 @@
       },
       "percentageOfTotalUsed": "Percentatge del total"
     },
-    "overview": "Visió general"
+    "overview": "Visió general",
+    "shm": {
+      "title": "Ubicació de SHM (memória compartida)",
+      "warning": "El tamany de la SHM oh {{total}}MB es massa petita. Augmenta almenys fins a {{min_shm}}MB."
+    }
   },
   "cameras": {
     "framesAndDetections": "Fotogrames / Deteccions",
@@ -158,7 +175,8 @@
     "ffmpegHighCpuUsage": "{{camera}} te un ús elevat de CPU per FFmpeg ({{ffmpegAvg}}%)",
     "detectHighCpuUsage": "{{camera}} te un ús elevat de CPU per la detecció ({{detectAvg}}%)",
     "detectIsVerySlow": "{{detect}} és molt lent ({{speed}} ms)",
-    "detectIsSlow": "{{detect}} és lent ({{speed}} ms)"
+    "detectIsSlow": "{{detect}} és lent ({{speed}} ms)",
+    "shmTooLow": "/dev/shm directori ({{total}} MB) hauria de ser incrementat com a mínim {{min}} MB."
   },
   "enrichments": {
     "title": "Enriquiments",
@@ -173,8 +191,18 @@
       "plate_recognition_speed": "Velocitat de reconeixement de matrícules",
       "text_embedding_speed": "Velocitat d'incrustació de text",
       "yolov9_plate_detection": "Detecció de matrícules YOLOv9",
-      "yolov9_plate_detection_speed": "Velocitat de detecció de matrícules YOLOv9"
+      "yolov9_plate_detection_speed": "Velocitat de detecció de matrícules YOLOv9",
+      "review_description": "Descripció de la revisió",
+      "review_description_speed": "Velocitat de la descripció de la revisió",
+      "review_description_events_per_second": "Descripció de la revisió",
+      "object_description": "Descripció de l'objecte",
+      "object_description_speed": "Velocitat de la descripció de l'objecte",
+      "object_description_events_per_second": "Descripció de l'objecte",
+      "classification": "{{name}} Classificació",
+      "classification_speed": "Velocitat de classificació de {{name}}",
+      "classification_events_per_second": "{{name}} Esdeveniments de classificació per segon"
     },
-    "infPerSecond": "Inferències per segon"
+    "infPerSecond": "Inferències per segon",
+    "averageInf": "Temps mitjà d'inferència"
   }
 }

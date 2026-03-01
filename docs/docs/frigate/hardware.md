@@ -3,6 +3,8 @@ id: hardware
 title: Recommended hardware
 ---
 
+import CommunityBadge from '@site/src/components/CommunityBadge';
+
 ## Cameras
 
 Cameras that output H.264 video and AAC audio will offer the most compatibility with all features of Frigate and Home Assistant. It is also helpful if your camera supports multiple substreams to allow different resolutions to be used for detection, streaming, and recordings without re-encoding.
@@ -40,7 +42,7 @@ If the EQ13 is out of stock, the link below may take you to a suggested alternat
 | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
 | Beelink EQ13 (<a href="https://amzn.to/4jn2qVr" target="_blank" rel="nofollow noopener sponsored">Amazon</a>) | Can run object detection on several 1080p cameras with low-medium activity | Dual gigabit NICs for easy isolated camera network. |
 | Intel 1120p ([Amazon](https://www.amazon.com/Beelink-i3-1220P-Computer-Display-Gigabit/dp/B0DDCKT9YP)         | Can handle a large number of 1080p cameras with high activity              |                                                     |
-| Intel 125H  ([Amazon](https://www.amazon.com/MINISFORUM-Pro-125H-Barebone-Computer-HDMI2-1/dp/B0FH21FSZM)     | Can handle a significant number of 1080p cameras with high activity        | Includes NPU for more efficient detection in 0.17+  |
+| Intel 125H ([Amazon](https://www.amazon.com/MINISFORUM-Pro-125H-Barebone-Computer-HDMI2-1/dp/B0FH21FSZM)      | Can handle a significant number of 1080p cameras with high activity        | Includes NPU for more efficient detection in 0.17+  |
 
 ## Detectors
 
@@ -53,37 +55,53 @@ Frigate supports multiple different detectors that work on different types of ha
 **Most Hardware**
 
 - [Hailo](#hailo-8): The Hailo8 and Hailo8L AI Acceleration module is available in m.2 format with a HAT for RPi devices offering a wide range of compatibility with devices.
-
   - [Supports many model architectures](../../configuration/object_detectors#configuration)
   - Runs best with tiny or small size models
 
 - [Google Coral EdgeTPU](#google-coral-tpu): The Google Coral EdgeTPU is available in USB and m.2 format allowing for a wide range of compatibility with devices.
   - [Supports primarily ssdlite and mobilenet model architectures](../../configuration/object_detectors#edge-tpu-detector)
 
+- <CommunityBadge /> [MemryX](#memryx-mx3): The MX3 M.2 accelerator module is available in m.2 format allowing for a wide range of compatibility with devices.
+  - [Supports many model architectures](../../configuration/object_detectors#memryx-mx3)
+  - Runs best with tiny, small, or medium-size models
+
 **AMD**
 
 - [ROCm](#rocm---amd-gpu): ROCm can run on AMD Discrete GPUs to provide efficient object detection
-  - [Supports limited model architectures](../../configuration/object_detectors#supported-models-1)
+  - [Supports limited model architectures](../../configuration/object_detectors#rocm-supported-models)
   - Runs best on discrete AMD GPUs
+
+**Apple Silicon**
+
+- [Apple Silicon](#apple-silicon): Apple Silicon is usable on all M1 and newer Apple Silicon devices to provide efficient and fast object detection
+  - [Supports primarily ssdlite and mobilenet model architectures](../../configuration/object_detectors#apple-silicon-supported-models)
+  - Runs well with any size models including large
+  - Runs via ZMQ proxy which adds some latency, only recommended for local connection
 
 **Intel**
 
-- [OpenVino](#openvino---intel): OpenVino can run on Intel Arc GPUs, Intel integrated GPUs, and Intel CPUs to provide efficient object detection.
-  - [Supports majority of model architectures](../../configuration/object_detectors#supported-models)
+- [OpenVino](#openvino---intel): OpenVino can run on Intel Arc GPUs, Intel integrated GPUs, and Intel NPUs to provide efficient object detection.
+  - [Supports majority of model architectures](../../configuration/object_detectors#openvino-supported-models)
   - Runs best with tiny, small, or medium models
 
 **Nvidia**
 
-- [TensortRT](#tensorrt---nvidia-gpu): TensorRT can run on Nvidia GPUs and Jetson devices.
-  - [Supports majority of model architectures via ONNX](../../configuration/object_detectors#supported-models-2)
+- [TensortRT](#tensorrt---nvidia-gpu): TensorRT can run on Nvidia GPUs to provide efficient object detection.
+  - [Supports majority of model architectures via ONNX](../../configuration/object_detectors#onnx-supported-models)
   - Runs well with any size models including large
 
-**Rockchip**
+- <CommunityBadge /> [Jetson](#nvidia-jetson): Jetson devices are supported via the TensorRT or ONNX detectors when running Jetpack 6.
+
+**Rockchip** <CommunityBadge />
 
 - [RKNN](#rockchip-platform): RKNN models can run on Rockchip devices with included NPUs to provide efficient object detection.
   - [Supports limited model architectures](../../configuration/object_detectors#choosing-a-model)
   - Runs best with tiny or small size models
   - Runs efficiently on low power hardware
+
+**Synaptics** <CommunityBadge />
+
+- [Synaptics](#synaptics): synap models can run on Synaptics devices(e.g astra machina) with included NPUs to provide efficient object detection.
 
 :::
 
@@ -125,14 +143,13 @@ The OpenVINO detector type is able to run on:
 
 - 6th Gen Intel Platforms and newer that have an iGPU
 - x86 hosts with an Intel Arc GPU
+- Intel NPUs
 - Most modern AMD CPUs (though this is officially not supported by Intel)
 - x86 & Arm64 hosts via CPU (generally not recommended)
 
 :::note
 
-Intel NPUs have seen [limited success in community deployments](https://github.com/blakeblackshear/frigate/discussions/13248#discussioncomment-12347357), although they remain officially unsupported.
-
-In testing, the NPU delivered performance that was only comparable to — or in some cases worse than — the integrated GPU.
+Intel B-series (Battlemage) GPUs are not officially supported with Frigate 0.17, though a user has [provided steps to rebuild the Frigate container](https://github.com/blakeblackshear/frigate/discussions/21257) with support for them.
 
 :::
 
@@ -145,12 +162,13 @@ Inference speeds vary greatly depending on the CPU or GPU used, some known examp
 | Intel HD 530   | 15 - 35 ms                 |                                                   |                           |                        | Can only run one detector instance |
 | Intel HD 620   | 15 - 25 ms                 |                                                   | 320: ~ 35 ms              |                        |                                    |
 | Intel HD 630   | ~ 15 ms                    |                                                   | 320: ~ 30 ms              |                        |                                    |
-| Intel UHD 730  | ~ 10 ms                    |                                                   | 320: ~ 19 ms 640: ~ 54 ms |                        |                                    |
+| Intel UHD 730  | ~ 10 ms                    | t-320: 14ms s-320: 24ms t-640: 34ms s-640: 65ms   | 320: ~ 19 ms 640: ~ 54 ms |                        |                                    |
 | Intel UHD 770  | ~ 15 ms                    | t-320: ~ 16 ms s-320: ~ 20 ms s-640: ~ 40 ms      | 320: ~ 20 ms 640: ~ 46 ms |                        |                                    |
 | Intel N100     | ~ 15 ms                    | s-320: 30 ms                                      | 320: ~ 25 ms              |                        | Can only run one detector instance |
 | Intel N150     | ~ 15 ms                    | t-320: 16 ms s-320: 24 ms                         |                           |                        |                                    |
-| Intel Iris XE  | ~ 10 ms                    | s-320: 12 ms s-640: 30 ms                         | 320: ~ 18 ms 640: ~ 50 ms |                        |                                    |
-| Intel Arc A310 | ~ 5  ms                    | t-320: 7 ms t-640: 11 ms s-320: 8 ms s-640: 15 ms | 320: ~ 8 ms 640: ~ 14 ms  |                        |                                    |
+| Intel Iris XE  | ~ 10 ms                    | t-320: 6 ms t-640: 14 ms s-320: 8 ms s-640: 16 ms | 320: ~ 10 ms 640: ~ 20 ms | 320-n: 33 ms           |                                    |
+| Intel NPU      | ~ 6 ms                     | s-320: 11 ms s-640: 30 ms                         | 320: ~ 14 ms 640: ~ 34 ms | 320-n: 40 ms           |                                    |
+| Intel Arc A310 | ~ 5 ms                     | t-320: 7 ms t-640: 11 ms s-320: 8 ms s-640: 15 ms | 320: ~ 8 ms 640: ~ 14 ms  |                        |                                    |
 | Intel Arc A380 | ~ 6 ms                     |                                                   | 320: ~ 10 ms 640: ~ 22 ms | 336: 20 ms 448: 27 ms  |                                    |
 | Intel Arc A750 | ~ 4 ms                     |                                                   | 320: ~ 8 ms               |                        |                                    |
 
@@ -160,7 +178,7 @@ Frigate is able to utilize an Nvidia GPU which supports the 12.x series of CUDA 
 
 #### Minimum Hardware Support
 
- 12.x series of CUDA libraries are used which have minor version compatibility. The minimum driver version on the host system must be `>=545`. Also the GPU must support a Compute Capability of `5.0` or greater. This generally correlates to a Maxwell-era GPU or newer, check the NVIDIA GPU Compute Capability table linked below.
+12.x series of CUDA libraries are used which have minor version compatibility. The minimum driver version on the host system must be `>=545`. Also the GPU must support a Compute Capability of `5.0` or greater. This generally correlates to a Maxwell-era GPU or newer, check the NVIDIA GPU Compute Capability table linked below.
 
 Make sure your host system has the [nvidia-container-runtime](https://docs.docker.com/config/containers/resource_constraints/#access-an-nvidia-gpu) installed to pass through the GPU to the container and the host system has a compatible driver installed for your GPU.
 
@@ -168,37 +186,81 @@ There are improved capabilities in newer GPU architectures that TensorRT can ben
 
 #### Compatibility References:
 
-[NVIDIA TensorRT Support Matrix](https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-841/support-matrix/index.html)
+[NVIDIA TensorRT Support Matrix](https://docs.nvidia.com/deeplearning/tensorrt-rtx/latest/getting-started/support-matrix.html)
 
 [NVIDIA CUDA Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html)
 
 [NVIDIA GPU Compute Capability](https://developer.nvidia.com/cuda-gpus)
 
 Inference speeds will vary greatly depending on the GPU and the model used.
-`tiny` variants are faster than the equivalent non-tiny model, some known examples are below:
+`tiny (t)` variants are faster than the equivalent non-tiny model, some known examples are below:
 
-| Name            | YOLOv9 Inference Time     | YOLO-NAS Inference Time   | RF-DETR Inference Time |
-| --------------- | ------------------------- | ------------------------- | ---------------------- |
-| GTX 1070        | s-320: 16 ms              | 320: 14 ms                |                        |
-| RTX 3050        | t-320: 15 ms s-320: 17 ms | 320: ~ 10 ms 640: ~ 16 ms | Nano-320: ~ 12 ms      |
-| RTX 3070        | t-320: 11 ms s-320: 13 ms | 320: ~ 8 ms 640: ~ 14 ms  | Nano-320: ~ 9 ms       |
-| RTX A4000       |                           | 320: ~ 15 ms              |                        |
-| Tesla P40       |                           | 320: ~ 105 ms             |                        |
+✅ - Accelerated with CUDA Graphs
+❌ - Not accelerated with CUDA Graphs
+
+| Name      | ✅ YOLOv9 Inference Time              | ✅ RF-DETR Inference Time | ❌ YOLO-NAS Inference Time |
+| --------- | ------------------------------------- | ------------------------- | -------------------------- |
+| GTX 1070  | s-320: 16 ms                          |                           | 320: 14 ms                 |
+| RTX 3050  | t-320: 8 ms s-320: 10 ms s-640: 28 ms | Nano-320: ~ 12 ms         | 320: ~ 10 ms 640: ~ 16 ms  |
+| RTX 3070  | t-320: 6 ms s-320: 8 ms s-640: 25 ms  | Nano-320: ~ 9 ms          | 320: ~ 8 ms 640: ~ 14 ms   |
+| RTX A4000 |                                       |                           | 320: ~ 15 ms               |
+| Tesla P40 |                                       |                           | 320: ~ 105 ms              |
+
+### Apple Silicon
+
+With the [Apple Silicon](../configuration/object_detectors.md#apple-silicon-detector) detector Frigate can take advantage of the NPU in M1 and newer Apple Silicon.
+
+:::warning
+
+Apple Silicon can not run within a container, so a ZMQ proxy is utilized to communicate with [the Apple Silicon Frigate detector](https://github.com/frigate-nvr/apple-silicon-detector) which runs on the host. This should add minimal latency when run on the same device.
+
+:::
+
+| Name   | YOLOv9 Inference Time                |
+| ------ | ------------------------------------ |
+| M4     | s-320: 10 ms                         |
+| M3 Pro | t-320: 6 ms s-320: 8 ms s-640: 20 ms |
+| M1     | s-320: 9ms                           |
 
 ### ROCm - AMD GPU
 
-With the [rocm](../configuration/object_detectors.md#amdrocm-gpu-detector) detector Frigate can take advantage of many discrete AMD GPUs.
+With the [ROCm](../configuration/object_detectors.md#amdrocm-gpu-detector) detector Frigate can take advantage of many discrete AMD GPUs.
 
-| Name      | YOLOv9 Inference Time | YOLO-NAS Inference Time   |
-| --------- | --------------------- | ------------------------- |
-| AMD 780M  | 320: ~ 14 ms          | 320: ~ 25 ms 640: ~ 50 ms |
-| AMD 8700G |                       | 320: ~ 20 ms 640: ~ 40 ms |
+| Name      | YOLOv9 Inference Time       | YOLO-NAS Inference Time   |
+| --------- | --------------------------- | ------------------------- |
+| AMD 780M  | t-320: ~ 14 ms s-320: 20 ms | 320: ~ 25 ms 640: ~ 50 ms |
+| AMD 8700G |                             | 320: ~ 20 ms 640: ~ 40 ms |
 
 ## Community Supported Detectors
 
+### MemryX MX3
+
+Frigate supports the MemryX MX3 M.2 AI Acceleration Module on compatible hardware platforms, including both x86 (Intel/AMD) and ARM-based SBCs such as Raspberry Pi 5.
+
+A single MemryX MX3 module is capable of handling multiple camera streams using the default models, making it sufficient for most users. For larger deployments with more cameras or bigger models, multiple MX3 modules can be used. Frigate supports multi-detector configurations, allowing you to connect multiple MX3 modules to scale inference capacity.
+
+Detailed information is available [in the detector docs](/configuration/object_detectors#memryx-mx3).
+
+**Default Model Configuration:**
+
+- Default model is **YOLO-NAS-Small**.
+
+The MX3 is a pipelined architecture, where the maximum frames per second supported (and thus supported number of cameras) cannot be calculated as `1/latency` (1/"Inference Time") and is measured separately. When estimating how many camera streams you may support with your configuration, use the **MX3 Total FPS** column to approximate of the detector's limit, not the Inference Time.
+
+| Model                | Input Size | MX3 Inference Time | MX3 Total FPS |
+| -------------------- | ---------- | ------------------ | ------------- |
+| YOLO-NAS-Small       | 320        | ~ 9 ms             | ~ 378         |
+| YOLO-NAS-Small       | 640        | ~ 21 ms            | ~ 138         |
+| YOLOv9s              | 320        | ~ 16 ms            | ~ 382         |
+| YOLOv9s              | 640        | ~ 41 ms            | ~ 110         |
+| YOLOX-Small          | 640        | ~ 16 ms            | ~ 263         |
+| SSDlite MobileNet v2 | 320        | ~ 5 ms             | ~ 1056        |
+
+Inference speeds may vary depending on the host platform. The above data was measured on an **Intel 13700 CPU**. Platforms like Raspberry Pi, Orange Pi, and other ARM-based SBCs have different levels of processing capability, which may limit total FPS.
+
 ### Nvidia Jetson
 
-Frigate supports all Jetson boards, from the inexpensive Jetson Nano to the powerful Jetson Orin AGX. It will [make use of the Jetson's hardware media engine](/configuration/hardware_acceleration_video#nvidia-jetson-orin-agx-orin-nx-orin-nano-xavier-agx-xavier-nx-tx2-tx1-nano) when configured with the [appropriate presets](/configuration/ffmpeg_presets#hwaccel-presets), and will make use of the Jetson's GPU and DLA for object detection when configured with the [TensorRT detector](/configuration/object_detectors#nvidia-tensorrt-detector).
+Jetson devices are supported via the TensorRT or ONNX detectors when running Jetpack 6. It will [make use of the Jetson's hardware media engine](/configuration/hardware_acceleration_video#nvidia-jetson-orin-agx-orin-nx-orin-nano-xavier-agx-xavier-nx-tx2-tx1-nano) when configured with the [appropriate presets](/configuration/ffmpeg_presets#hwaccel-presets), and will make use of the Jetson's GPU and DLA for object detection when configured with the [TensorRT detector](/configuration/object_detectors#nvidia-tensorrt-detector).
 
 Inference speed will vary depending on the YOLO model, jetson platform and jetson nvpmodel (GPU/DLA/EMC clock speed). It is typically 20-40 ms for most models. The DLA is more efficient than the GPU, but not faster, so using the DLA will reduce power consumption but will slightly increase inference time.
 
@@ -218,6 +280,15 @@ Frigate supports hardware video processing on all Rockchip boards. However, hard
 | rk3566 1 core  |                       | small: ~ 96 ms              |                         |
 
 The inference time of a rk3588 with all 3 cores enabled is typically 25-30 ms for yolo-nas s.
+
+### Synaptics
+
+- **Synaptics** Default model is **mobilenet**
+
+| Name          | Synaptics SL1680 Inference Time |
+| ------------- | ------------------------------- |
+| ssd mobilenet | ~ 25 ms                         |
+| yolov5m       | ~ 118 ms                        |
 
 ## What does Frigate use the CPU for and what does it use a detector for? (ELI5 Version)
 

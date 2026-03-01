@@ -43,7 +43,15 @@
         "label": "Klikněte do snímku pro vycentrování PTZ kamery"
       }
     },
-    "presets": "Předvolby PTZ kamery"
+    "presets": "Předvolby PTZ kamery",
+    "focus": {
+      "in": {
+        "label": "Zaostření PTZ kamery"
+      },
+      "out": {
+        "label": "Rozostření PTZ kamery"
+      }
+    }
   },
   "camera": {
     "enable": "Povolit kameru",
@@ -78,7 +86,7 @@
     "enable": "Ukázat statistiky streamu"
   },
   "manualRecording": {
-    "title": "Nahrávání na vyžádání",
+    "title": "Na požádání",
     "playInBackground": {
       "label": "Přehrát na pozadí",
       "desc": "Povolte tuto volbu pro pokračování streamování i když je přehrávač skrytý."
@@ -95,7 +103,7 @@
     "started": "Manuálně spuštěno nahrávání na požádání.",
     "ended": "Ukončeno manuální nahrávání na vyžádání.",
     "recordDisabledTips": "Protože je v konfiguraci této kamery nahrávání zakázáno nebo omezeno, bude uložen pouze snímek.",
-    "tips": "Spustit ruční událost na základě nastavení uchovávání záznamů této kamery."
+    "tips": "Stáhněte si aktuální snímek nebo spusťte ruční událost na základě nastavení uchování záznamu této kamery."
   },
   "streamingSettings": "Nastavení Streamování",
   "audio": "Zvuk",
@@ -103,7 +111,7 @@
     "forTime": "Pozastavení na: "
   },
   "stream": {
-    "title": "Stream",
+    "title": "Proud",
     "audio": {
       "tips": {
         "title": "Zvuk musí být kamerou vysílán a nakonfigurován v go2rtc pro tento stream.",
@@ -134,7 +142,8 @@
     "snapshots": "Snímky",
     "audioDetection": "Detekce Zvuku",
     "autotracking": "Automatické sledování",
-    "recording": "Nahrávání"
+    "recording": "Nahrávání",
+    "transcription": "Zvukový přepis"
   },
   "history": {
     "label": "Zobrazit historické záznamy"
@@ -154,5 +163,15 @@
       "label": "Upravit Skupinu Kamer"
     }
   },
-  "notifications": "Notifikace"
+  "notifications": "Notifikace",
+  "transcription": {
+    "enable": "Povolit živý přepis zvuku",
+    "disable": "Zakázat živý přepis zvuku"
+  },
+  "snapshot": {
+    "takeSnapshot": "Stáhnout aktuální snímek",
+    "noVideoSource": "Pro snímek není k dispozici žádné video.",
+    "captureFailed": "Zachycení snímku selhalo.",
+    "downloadStarted": "Stažení snímku spuštěno."
+  }
 }

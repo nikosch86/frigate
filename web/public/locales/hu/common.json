@@ -72,7 +72,11 @@
       "24hour": "MMM d, HH:mm",
       "12hour": "MMM d, h:mm aaa"
     },
-    "formattedTimestampMonthDay": "MMM d"
+    "formattedTimestampMonthDay": "MMM d",
+    "inProgress": "Folyamatban",
+    "invalidStartTime": "Érvénytelen kezdeti idő",
+    "never": "Soha",
+    "invalidEndTime": "Érvénytelen befejezési idő"
   },
   "menu": {
     "darkMode": {
@@ -103,7 +107,7 @@
       "logout": "Kijelentkezés",
       "title": "Felhasználó",
       "account": "Fiók",
-      "current": "Jelenlegi Felhazsnáló: {{user}}",
+      "current": "Jelenlegi Felhasználó: {{user}}",
       "anonymous": "anoním",
       "setPassword": "Jelszó Beállítása"
     },
@@ -142,7 +146,16 @@
       "ro": "Román",
       "hu": "Magyar",
       "fi": "Finn",
-      "th": "Thai"
+      "th": "Thai",
+      "ptBR": "Português brasileiro (Brazil portugál)",
+      "sr": "Српски (Szerb)",
+      "sl": "Slovenščina (Szlovén)",
+      "lt": "Lietuvių (Litván)",
+      "bg": "Български (Bolgár)",
+      "gl": "Galego (Galíciai)",
+      "id": "Bahasa Indonesia (Indonéz)",
+      "ur": "اردو (Urdu)",
+      "hr": "Horvát"
     },
     "uiPlayground": "UI játszótér",
     "faceLibrary": "Arc Könyvtár",
@@ -164,11 +177,12 @@
     "system": "Rendszer",
     "configuration": "Konfiguráció",
     "systemLogs": "Rendszer naplók",
-    "settings": "Beállítások"
+    "settings": "Beállítások",
+    "classification": "Osztályozás"
   },
   "role": {
     "viewer": "Néző",
-    "title": "Szerep",
+    "title": "Szerepkör",
     "admin": "Adminisztrátor",
     "desc": "Az adminisztrátoroknak teljes hozzáférése van az összes feature-höz. A nézők csak a kamerákat láthatják, áttekinthetik az elemeket és az előzményeket a UI-on."
   },
@@ -204,7 +218,7 @@
       }
     }
   },
-  "selectItem": "KIválasztani {{item}}-et",
+  "selectItem": "Kiválasztani {{item}}-et",
   "unit": {
     "speed": {
       "mph": "mph",
@@ -213,6 +227,14 @@
     "length": {
       "feet": "láb",
       "meters": "méter"
+    },
+    "data": {
+      "kbps": "kB/s",
+      "mbps": "MB/s",
+      "gbps": "GB/s",
+      "kbph": "kB/óra",
+      "mbph": "MB/óra",
+      "gbph": "GB/óra"
     }
   },
   "button": {
@@ -250,9 +272,29 @@
     "unselect": "Kijelölés megszüntetése",
     "export": "Exportálás",
     "deleteNow": "Törlés Most",
-    "next": "Következő"
+    "next": "Következő",
+    "continue": "Tovább"
   },
   "label": {
-    "back": "Vissza"
+    "back": "Vissza",
+    "all": "Mind",
+    "hide": "Elrejt {{item}}",
+    "show": "Mutat {{item}}",
+    "ID": "ID",
+    "none": "Nincs",
+    "other": "Egyéb"
+  },
+  "readTheDocumentation": "Olvassa el a dokumentációt",
+  "information": {
+    "pixels": "{{area}}px"
+  },
+  "list": {
+    "two": "{{0}} és {{1}}",
+    "many": "{{items}}, és {{last}}",
+    "separatorWithSpace": ", "
+  },
+  "field": {
+    "optional": "Opcionális",
+    "internalID": "A belső ID, amelyet a Frigate használ a konfigurációban és az adatbázisban"
   }
 }
