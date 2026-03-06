@@ -344,15 +344,9 @@ export default function LivePlayer({
         (!showStillWithoutActivity || isReEnabling) &&
         !liveReady && <ActivityIndicator />}
 
-      {cameraEnabled && (
-        <div className="absolute left-3 top-2 z-40 text-xs font-medium text-white">
-          {capitalizeAll(cameraConfig.name)}
-        </div>
-      )}
-
       {((showStillWithoutActivity && !liveReady) || liveReady) &&
         objects.length > 0 && (
-          <div className="absolute left-0 top-7 z-40">
+          <div className="absolute left-0 top-2 z-40">
             <Tooltip>
               <div className="flex">
                 <TooltipTrigger asChild>
