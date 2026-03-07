@@ -11,6 +11,7 @@ EXPORT_DIR = f"{BASE_DIR}/exports"
 FACE_DIR = f"{CLIPS_DIR}/faces"
 THUMB_DIR = f"{CLIPS_DIR}/thumbs"
 RECORD_DIR = f"{BASE_DIR}/recordings"
+TRIGGER_DIR = f"{CLIPS_DIR}/triggers"
 BIRDSEYE_PIPE = "/tmp/cache/birdseye"
 CACHE_DIR = "/tmp/cache"
 FRIGATE_LOCALHOST = "http://127.0.0.1:5000"
@@ -73,7 +74,11 @@ FFMPEG_HWACCEL_NVIDIA = "preset-nvidia"
 FFMPEG_HWACCEL_VAAPI = "preset-vaapi"
 FFMPEG_HWACCEL_VULKAN = "preset-vulkan"
 FFMPEG_HWACCEL_RKMPP = "preset-rkmpp"
+FFMPEG_HWACCEL_AMF = "preset-amd-amf"
 FFMPEG_HVC1_ARGS = ["-tag:v", "hvc1"]
+
+# RKNN constants
+SUPPORTED_RK_SOCS = ["rk3562", "rk3566", "rk3568", "rk3576", "rk3588"]
 
 # Regex constants
 
@@ -109,10 +114,21 @@ REQUEST_REGION_GRID = "request_region_grid"
 UPSERT_REVIEW_SEGMENT = "upsert_review_segment"
 CLEAR_ONGOING_REVIEW_SEGMENTS = "clear_ongoing_review_segments"
 UPDATE_CAMERA_ACTIVITY = "update_camera_activity"
+UPDATE_AUDIO_ACTIVITY = "update_audio_activity"
+EXPIRE_AUDIO_ACTIVITY = "expire_audio_activity"
+UPDATE_AUDIO_TRANSCRIPTION_STATE = "update_audio_transcription_state"
 UPDATE_EVENT_DESCRIPTION = "update_event_description"
+UPDATE_REVIEW_DESCRIPTION = "update_review_description"
 UPDATE_MODEL_STATE = "update_model_state"
 UPDATE_EMBEDDINGS_REINDEX_PROGRESS = "handle_embeddings_reindex_progress"
+UPDATE_BIRDSEYE_LAYOUT = "update_birdseye_layout"
 NOTIFICATION_TEST = "notification_test"
+
+# IO Nice Values
+
+PROCESS_PRIORITY_HIGH = 0
+PROCESS_PRIORITY_MED = 10
+PROCESS_PRIORITY_LOW = 19
 
 # Stats Values
 

@@ -33,10 +33,13 @@ import { Link } from "react-router-dom";
 import { LiveStreamMetadata } from "@/types/live";
 import { Trans, useTranslation } from "react-i18next";
 import { useDocDomain } from "@/hooks/use-doc-domain";
+import { useCameraFriendlyName } from "@/hooks/use-camera-friendly-name";
+import { detectCameraAudioFeatures } from "@/utils/cameraUtil";
 
 type CameraStreamingDialogProps = {
   camera: string;
   groupStreamingSettings: GroupStreamingSettings;
+  streamMetadata?: { [key: string]: LiveStreamMetadata };
   setGroupStreamingSettings: React.Dispatch<
     React.SetStateAction<GroupStreamingSettings>
   >;
@@ -47,6 +50,7 @@ type CameraStreamingDialogProps = {
 export function CameraStreamingDialog({
   camera,
   groupStreamingSettings,
+  streamMetadata,
   setGroupStreamingSettings,
   setIsDialogOpen,
   onSave,
@@ -55,6 +59,8 @@ export function CameraStreamingDialog({
 
   const { getLocaleDocUrl } = useDocDomain();
   const { data: config } = useSWR<FrigateConfig>("config");
+
+  const cameraName = useCameraFriendlyName(camera);
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -73,27 +79,12 @@ export function CameraStreamingDialog({
     [config, streamName],
   );
 
-  const { data: cameraMetadata } = useSWR<LiveStreamMetadata>(
-    isRestreamed ? `go2rtc/streams/${streamName}` : null,
-    {
-      revalidateOnFocus: false,
-    },
+  const cameraMetadata = streamName ? streamMetadata?.[streamName] : undefined;
+
+  const { audioOutput: supportsAudioOutput } = useMemo(
+    () => detectCameraAudioFeatures(cameraMetadata),
+    [cameraMetadata],
   );
-
-  const supportsAudioOutput = useMemo(() => {
-    if (!cameraMetadata) {
-      return false;
-    }
-
-    return (
-      cameraMetadata.producers.find(
-        (prod) =>
-          prod.medias &&
-          prod.medias.find((media) => media.includes("audio, recvonly")) !=
-            undefined,
-      ) != undefined
-    );
-  }, [cameraMetadata]);
 
   // handlers
 
@@ -190,7 +181,7 @@ export function CameraStreamingDialog({
       <DialogHeader className="mb-4">
         <DialogTitle className="smart-capitalize">
           {t("group.camera.setting.title", {
-            cameraName: camera.replaceAll("_", " "),
+            cameraName: cameraName,
           })}
         </DialogTitle>
         <DialogDescription>
@@ -228,9 +219,7 @@ export function CameraStreamingDialog({
                       rel="noopener noreferrer"
                       className="inline"
                     >
-                      {t("streaming.restreaming.desc.readTheDocumentation", {
-                        ns: "components/dialog",
-                      })}
+                      {t("readTheDocumentation", { ns: "common" })}
                       <LuExternalLink className="ml-2 inline-flex size-3" />
                     </Link>
                   </div>
@@ -289,7 +278,7 @@ export function CameraStreamingDialog({
                               rel="noopener noreferrer"
                               className="inline"
                             >
-                              {t("group.camera.setting.audio.tips.document")}
+                              {t("readTheDocumentation", { ns: "common" })}
                               <LuExternalLink className="ml-2 inline-flex size-3" />
                             </Link>
                           </div>

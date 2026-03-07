@@ -14,19 +14,38 @@ paths:
     get:
       tags:
         - Auth
-      summary: Auth
+      summary: Authenticate request
+      description: |-
+        Authenticates the current request based on proxy headers or JWT token.
+        This endpoint verifies authentication credentials and manages JWT token refresh.
+        On success, no JSON body is returned; authentication state is communicated via response headers and cookies.
       operationId: auth_auth_get
       responses:
-        "200":
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
+        "202":
+          description: Authentication Accepted (no response body, different headers depending on auth method)
+          headers:
+            remote-user:
+              description: Authenticated username or "viewer" in proxy-only mode
+              schema:
+                type: string
+            remote-role:
+              description: Resolved role (e.g., admin, viewer, or custom)
+              schema:
+                type: string
+            Set-Cookie:
+              description: May include refreshed JWT cookie ("frigate-token") when applicable
+              schema:
+                type: string
+        "401":
+          description: Authentication Failed
   /profile:
     get:
       tags:
         - Auth
-      summary: Profile
+      summary: Get user profile
+      description: |-
+        Returns the current authenticated user's profile including username, role, and allowed cameras.
+        This endpoint requires authentication and returns information about the user's permissions.
       operationId: profile_profile_get
       responses:
         "200":
@@ -34,11 +53,16 @@ paths:
           content:
             application/json:
               schema: {}
+        "401":
+          description: Unauthorized
   /logout:
     get:
       tags:
         - Auth
-      summary: Logout
+      summary: Logout user
+      description: |-
+        Logs out the current user by clearing the session cookie.
+        After logout, subsequent requests will require re-authentication.
       operationId: logout_logout_get
       responses:
         "200":
@@ -46,11 +70,22 @@ paths:
           content:
             application/json:
               schema: {}
+        "303":
+          description: See Other (redirects to login page)
   /login:
     post:
       tags:
         - Auth
-      summary: Login
+      summary: Login with credentials
+      description: |-
+        Authenticates a user with username and password.
+        Returns a JWT token as a secure HTTP-only cookie that can be used for subsequent API requests.
+        The JWT token can also be retrieved from the response and used as a Bearer token in the Authorization header.
+
+        Example using Bearer token:
+        ```
+        curl -H "Authorization: Bearer <token_value>" https://frigate_ip:8971/api/profile
+        ```
       operationId: login_login_post
       requestBody:
         required: true
@@ -64,6 +99,11 @@ paths:
           content:
             application/json:
               schema: {}
+        "401":
+          description: Login Failed - Invalid credentials
+          content:
+            application/json:
+              schema: {}
         "422":
           description: Validation Error
           content:
@@ -74,7 +114,10 @@ paths:
     get:
       tags:
         - Auth
-      summary: Get Users
+      summary: Get all users
+      description: |-
+        Returns a list of all users with their usernames and roles.
+        Requires admin role. Each user object contains the username and assigned role.
       operationId: get_users_users_get
       responses:
         "200":
@@ -82,10 +125,19 @@ paths:
           content:
             application/json:
               schema: {}
+        "403":
+          description: Forbidden - Admin role required
     post:
       tags:
         - Auth
-      summary: Create User
+      summary: Create new user
+      description: |-
+        Creates a new user with the specified username, password, and role.
+        Requires admin role. Password must meet strength requirements:
+        - Minimum 8 characters
+        - At least one uppercase letter
+        - At least one digit
+        - At least one special character (!@#$%^&*(),.?":{}\|<>)
       operationId: create_user_users_post
       requestBody:
         required: true
@@ -99,6 +151,13 @@ paths:
           content:
             application/json:
               schema: {}
+        "400":
+          description: Bad Request - Invalid username or role
+          content:
+            application/json:
+              schema: {}
+        "403":
+          description: Forbidden - Admin role required
         "422":
           description: Validation Error
           content:
@@ -109,7 +168,10 @@ paths:
     delete:
       tags:
         - Auth
-      summary: Delete User
+      summary: Delete user
+      description: |-
+        Deletes a user by username. The built-in admin user cannot be deleted.
+        Requires admin role. Returns success message or error if user not found.
       operationId: delete_user_users__username__delete
       parameters:
         - name: username
@@ -118,12 +180,15 @@ paths:
           schema:
             type: string
             title: Username
+            description: The username of the user to delete
       responses:
         "200":
           description: Successful Response
           content:
             application/json:
               schema: {}
+        "403":
+          description: Forbidden - Cannot delete admin user or admin role required
         "422":
           description: Validation Error
           content:
@@ -134,7 +199,17 @@ paths:
     put:
       tags:
         - Auth
-      summary: Update Password
+      summary: Update user password
+      description: |-
+        Updates a user's password. Users can only change their own password unless they have admin role.
+        Requires the current password to verify identity for non-admin users.
+        Password must meet strength requirements:
+        - Minimum 8 characters
+        - At least one uppercase letter
+        - At least one digit
+        - At least one special character (!@#$%^&*(),.?":{}\|<>)
+
+        If user changes their own password, a new JWT cookie is automatically issued.
       operationId: update_password_users__username__password_put
       parameters:
         - name: username
@@ -143,6 +218,7 @@ paths:
           schema:
             type: string
             title: Username
+            description: The username of the user whose password to update
       requestBody:
         required: true
         content:
@@ -155,6 +231,14 @@ paths:
           content:
             application/json:
               schema: {}
+        "400":
+          description: Bad Request - Current password required or password doesn't meet requirements
+        "401":
+          description: Unauthorized - Current password is incorrect
+        "403":
+          description: Forbidden - Viewers can only update their own password
+        "404":
+          description: Not Found - User not found
         "422":
           description: Validation Error
           content:
@@ -165,7 +249,10 @@ paths:
     put:
       tags:
         - Auth
-      summary: Update Role
+      summary: Update user role
+      description: |-
+        Updates a user's role. The built-in admin user's role cannot be modified.
+        Requires admin role. Valid roles are defined in the configuration.
       operationId: update_role_users__username__role_put
       parameters:
         - name: username
@@ -174,6 +261,7 @@ paths:
           schema:
             type: string
             title: Username
+            description: The username of the user whose role to update
       requestBody:
         required: true
         content:
@@ -186,6 +274,10 @@ paths:
           content:
             application/json:
               schema: {}
+        "400":
+          description: Bad Request - Invalid role
+        "403":
+          description: Forbidden - Cannot modify admin user's role or admin role required
         "422":
           description: Validation Error
           content:
@@ -195,20 +287,31 @@ paths:
   /faces:
     get:
       tags:
-        - Events
-      summary: Get Faces
+        - Classification
+      summary: Get all registered faces
+      description: |-
+        Returns a dictionary mapping face names to lists of image filenames.
+            Each key represents a registered face name, and the value is a list of image
+            files associated with that face. Supported image formats include .webp, .png,
+            .jpg, and .jpeg.
       operationId: get_faces_faces_get
       responses:
         "200":
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/FacesResponse"
   /faces/reprocess:
     post:
       tags:
-        - Events
-      summary: Reclassify Face
+        - Classification
+      summary: Reprocess a face training image
+      description: |-
+        Reprocesses a face training image to update the prediction.
+            Requires face recognition to be enabled in the configuration. The training file
+            must exist in the faces/train directory. Returns a success response or an error
+            message if face recognition is not enabled or the training file is invalid.
       operationId: reclassify_face_faces_reprocess_post
       requestBody:
         content:
@@ -231,8 +334,15 @@ paths:
   /faces/train/{name}/classify:
     post:
       tags:
-        - Events
-      summary: Train Face
+        - Classification
+      summary: Classify and save a face training image
+      description: |-
+        Adds a training image to a specific face name for face recognition.
+            Accepts either a training file from the train directory or an event_id to extract
+            the face from. The image is saved to the face's directory and the face classifier
+            is cleared to incorporate the new training data. Returns a success message with
+            the new filename or an error if face recognition is not enabled, the file/event
+            is invalid, or the face cannot be extracted.
       operationId: train_face_faces_train__name__classify_post
       parameters:
         - name: name
@@ -252,7 +362,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
         "422":
           description: Validation Error
           content:
@@ -262,8 +373,13 @@ paths:
   /faces/{name}/create:
     post:
       tags:
-        - Events
-      summary: Create Face
+        - Classification
+      summary: Create a new face name
+      description: |-
+        Creates a new folder for a face name in the faces directory.
+            This is used to organize face training images. The face name is sanitized and
+            spaces are replaced with underscores. Returns a success message or an error if
+            face recognition is not enabled.
       operationId: create_face_faces__name__create_post
       parameters:
         - name: name
@@ -277,7 +393,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
         "422":
           description: Validation Error
           content:
@@ -287,8 +404,14 @@ paths:
   /faces/{name}/register:
     post:
       tags:
-        - Events
-      summary: Register Face
+        - Classification
+      summary: Register a face image
+      description: >-
+        Registers a face image for a specific face name by uploading an image
+        file.
+            The uploaded image is processed and added to the face recognition system. Returns a
+            success response with details about the registration, or an error if face recognition
+            is not enabled or the image cannot be processed.
       operationId: register_face_faces__name__register_post
       parameters:
         - name: name
@@ -309,7 +432,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
         "422":
           description: Validation Error
           content:
@@ -319,8 +443,12 @@ paths:
   /faces/recognize:
     post:
       tags:
-        - Events
-      summary: Recognize Face
+        - Classification
+      summary: Recognize a face from an uploaded image
+      description: |-
+        Recognizes a face from an uploaded image file by comparing it against
+            registered faces in the system. Returns the recognized face name and confidence score,
+            or an error if face recognition is not enabled or the image cannot be processed.
       operationId: recognize_face_faces_recognize_post
       requestBody:
         required: true
@@ -333,7 +461,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/FaceRecognitionResponse"
         "422":
           description: Validation Error
           content:
@@ -343,8 +472,13 @@ paths:
   /faces/{name}/delete:
     post:
       tags:
-        - Events
-      summary: Deregister Faces
+        - Classification
+      summary: Delete face images
+      description: >-
+        Deletes specific face images for a given face name. The image IDs must
+        belong
+            to the specified face folder. To delete an entire face folder, all image IDs in that
+            folder must be sent. Returns a success message or an error if face recognition is not enabled.
       operationId: deregister_faces_faces__name__delete_post
       parameters:
         - name: name
@@ -354,17 +488,18 @@ paths:
             type: string
             title: Name
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              type: object
-              title: Body
+              $ref: "#/components/schemas/DeleteFaceImagesBody"
       responses:
         "200":
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
         "422":
           description: Validation Error
           content:
@@ -374,8 +509,11 @@ paths:
   /faces/{old_name}/rename:
     put:
       tags:
-        - Events
-      summary: Rename Face
+        - Classification
+      summary: Rename a face name
+      description: |-
+        Renames a face name in the system. The old name must exist and the new
+            name must be valid. Returns a success message or an error if face recognition is not enabled.
       operationId: rename_face_faces__old_name__rename_put
       parameters:
         - name: old_name
@@ -395,7 +533,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
         "422":
           description: Validation Error
           content:
@@ -405,8 +544,13 @@ paths:
   /lpr/reprocess:
     put:
       tags:
-        - Events
-      summary: Reprocess License Plate
+        - Classification
+      summary: Reprocess a license plate
+      description: |-
+        Reprocesses a license plate image to update the plate.
+            Requires license plate recognition to be enabled in the configuration. The event_id
+            must exist in the database. Returns a success message or an error if license plate
+            recognition is not enabled or the event_id is invalid.
       operationId: reprocess_license_plate_lpr_reprocess_put
       parameters:
         - name: event_id
@@ -430,15 +574,274 @@ paths:
   /reindex:
     put:
       tags:
-        - Events
-      summary: Reindex Embeddings
+        - Classification
+      summary: Reindex embeddings
+      description: |-
+        Reindexes the embeddings for all tracked objects.
+            Requires semantic search to be enabled in the configuration. Returns a success message or an error if semantic search is not enabled.
       operationId: reindex_embeddings_reindex_put
       responses:
         "200":
           description: Successful Response
           content:
             application/json:
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
+  /audio/transcribe:
+    put:
+      tags:
+        - Classification
+      summary: Transcribe audio
+      description: |-
+        Transcribes audio from a specific event.
+            Requires audio transcription to be enabled in the configuration. The event_id
+            must exist in the database. Returns a success message or an error if audio transcription is not enabled or the event_id is invalid.
+      operationId: transcribe_audio_audio_transcribe_put
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AudioTranscriptionBody"
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /classification/attributes:
+    get:
+      tags:
+        - Classification
+      summary: Get custom classification attributes
+      description: |-
+        Returns custom classification attributes for a given object type.
+        Only includes models with classification_type set to 'attribute'.
+        By default returns a flat sorted list of all attribute labels.
+        If group_by_model is true, returns attributes grouped by model name.
+      operationId: get_custom_attributes_classification_attributes_get
+      parameters:
+        - name: object_type
+          in: query
+          schema:
+            type: string
+        - name: group_by_model
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Successful Response
+        "422":
+          description: Validation Error
+  /classification/{name}/dataset:
+    get:
+      tags:
+        - Classification
+      summary: Get classification dataset
+      description: |-
+        Gets the dataset for a specific classification model.
+            The name must exist in the classification models. Returns a success message or an error if the name is invalid.
+      operationId: get_classification_dataset_classification__name__dataset_get
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Name
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
               schema: {}
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /classification/{name}/train:
+    get:
+      tags:
+        - Classification
+      summary: Get classification train images
+      description: |-
+        Gets the train images for a specific classification model.
+            The name must exist in the classification models. Returns a success message or an error if the name is invalid.
+      operationId: get_classification_images_classification__name__train_get
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Name
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+    post:
+      tags:
+        - Classification
+      summary: Train a classification model
+      description: |-
+        Trains a specific classification model.
+            The name must exist in the classification models. Returns a success message or an error if the name is invalid.
+      operationId: train_configured_model_classification__name__train_post
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Name
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /classification/{name}/dataset/{category}/delete:
+    post:
+      tags:
+        - Classification
+      summary: Delete classification dataset images
+      description: >-
+        Deletes specific dataset images for a given classification model and
+        category.
+            The image IDs must belong to the specified category. Returns a success message or an error if the name or category is invalid.
+      operationId: >-
+        delete_classification_dataset_images_classification__name__dataset__category__delete_post
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Name
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Category
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Body
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /classification/{name}/dataset/categorize:
+    post:
+      tags:
+        - Classification
+      summary: Categorize a classification image
+      description: >-
+        Categorizes a specific classification image for a given classification
+        model and category.
+            The image must exist in the specified category. Returns a success message or an error if the name or category is invalid.
+      operationId: >-
+        categorize_classification_image_classification__name__dataset_categorize_post
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Name
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Body
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /classification/{name}/train/delete:
+    post:
+      tags:
+        - Classification
+      summary: Delete classification train images
+      description: |-
+        Deletes specific train images for a given classification model.
+            The image IDs must belong to the specified train folder. Returns a success message or an error if the name is invalid.
+      operationId: >-
+        delete_classification_train_images_classification__name__train_delete_post
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Name
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Body
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
   /review:
     get:
       tags:
@@ -762,6 +1165,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /review/summarize/start/{start_ts}/end/{end_ts}:
+    post:
+      tags:
+        - Review
+      summary: Generate Review Summary
+      description: Use GenAI to summarize review items over a period of time.
+      operationId: >-
+        generate_review_summary_review_summarize_start__start_ts__end__end_ts__post
+      parameters:
+        - name: start_ts
+          in: path
+          required: true
+          schema:
+            type: number
+            title: Start Ts
+        - name: end_ts
+          in: path
+          required: true
+          schema:
+            type: number
+            title: End Ts
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
         "422":
           description: Validation Error
           content:
@@ -1322,15 +1758,21 @@ paths:
     get:
       tags:
         - Preview
-      summary: Preview Ts
-      description: Get all mp4 previews relevant for time period.
+      summary: Get preview clips for time range
+      description: |-
+        Gets all preview clips for a specified camera and time range.
+            Returns a list of preview video clips that overlap with the requested time period,
+            ordered by start time. Use camera_name='all' to get previews from all cameras.
+            Returns an error if no previews are found.
       operationId: preview_ts_preview__camera_name__start__start_ts__end__end_ts__get
       parameters:
         - name: camera_name
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: start_ts
           in: path
@@ -1349,7 +1791,13 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PreviewModel"
+                title: >-
+                  Response Preview Ts Preview  Camera Name  Start  Start Ts
+                  End  End Ts  Get
         "422":
           description: Validation Error
           content:
@@ -1360,8 +1808,12 @@ paths:
     get:
       tags:
         - Preview
-      summary: Preview Hour
-      description: Get all mp4 previews relevant for time period given the timezone
+      summary: Get preview clips for specific hour
+      description: |-
+        Gets all preview clips for a specific hour in a given timezone.
+            Converts the provided date/time from the specified timezone to UTC and retrieves
+            all preview clips for that hour. Use camera_name='all' to get previews from all cameras.
+            The tz_name should be a timezone like 'America/New_York' (use commas instead of slashes).
       operationId: >-
         preview_hour_preview__year_month___day___hour___camera_name___tz_name__get
       parameters:
@@ -1387,7 +1839,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: tz_name
           in: path
@@ -1400,7 +1854,13 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PreviewModel"
+                title: >-
+                  Response Preview Hour Preview  Year Month   Day   Hour
+                  Camera Name   Tz Name  Get
         "422":
           description: Validation Error
           content:
@@ -1411,8 +1871,12 @@ paths:
     get:
       tags:
         - Preview
-      summary: Get Preview Frames From Cache
-      description: Get list of cached preview frames
+      summary: Get cached preview frame filenames
+      description: >-
+        Gets a list of cached preview frame filenames for a specific camera and
+        time range.
+            Returns an array of filenames for preview frames that fall within the specified time period,
+            sorted in chronological order. These are individual frame images cached for quick preview display.
       operationId: >-
         get_preview_frames_from_cache_preview__camera_name__start__start_ts__end__end_ts__frames_get
       parameters:
@@ -1420,7 +1884,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: start_ts
           in: path
@@ -1439,7 +1905,13 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                type: array
+                items:
+                  type: string
+                title: >-
+                  Response Get Preview Frames From Cache Preview  Camera Name
+                  Start  Start Ts  End  End Ts  Frames Get
         "422":
           description: Validation Error
           content:
@@ -1450,7 +1922,10 @@ paths:
     get:
       tags:
         - Notifications
-      summary: Get Vapid Pub Key
+      summary: Get VAPID public key
+      description: |-
+        Gets the VAPID public key for the notifications.
+            Returns the public key or an error if notifications are not enabled.
       operationId: get_vapid_pub_key_notifications_pubkey_get
       responses:
         "200":
@@ -1462,7 +1937,10 @@ paths:
     post:
       tags:
         - Notifications
-      summary: Register Notifications
+      summary: Register notifications
+      description: |-
+        Registers a notifications subscription.
+            Returns a success message or an error if the subscription is not provided.
       operationId: register_notifications_notifications_register_post
       requestBody:
         content:
@@ -1486,19 +1964,31 @@ paths:
     get:
       tags:
         - Export
-      summary: Get Exports
+      summary: Get exports
+      description: |-
+        Gets all exports from the database for cameras the user has access to.
+            Returns a list of exports ordered by date (most recent first).
       operationId: get_exports_exports_get
       responses:
         "200":
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExportModel"
+                title: Response Get Exports Exports Get
   /export/{camera_name}/start/{start_time}/end/{end_time}:
     post:
       tags:
         - Export
-      summary: Export Recording
+      summary: Start recording export
+      description: |-
+        Starts an export of a recording for the specified time range.
+            The export can be from recordings or preview footage. Returns the export ID if
+            successful, or an error message if the camera is invalid or no recordings/previews
+            are found for the time range.
       operationId: >-
         export_recording_export__camera_name__start__start_time__end__end_time__post
       parameters:
@@ -1506,7 +1996,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: start_time
           in: path
@@ -1531,7 +2023,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/StartExportResponse"
         "422":
           description: Validation Error
           content:
@@ -1542,7 +2035,10 @@ paths:
     patch:
       tags:
         - Export
-      summary: Export Rename
+      summary: Rename export
+      description: |-
+        Renames an export.
+            NOTE: This changes the friendly name of the export, not the filename.
       operationId: export_rename_export__event_id__rename_patch
       parameters:
         - name: event_id
@@ -1562,7 +2058,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
         "422":
           description: Validation Error
           content:
@@ -1573,7 +2070,7 @@ paths:
     delete:
       tags:
         - Export
-      summary: Export Delete
+      summary: Delete export
       operationId: export_delete_export__event_id__delete
       parameters:
         - name: event_id
@@ -1587,7 +2084,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
         "422":
           description: Validation Error
           content:
@@ -1598,7 +2096,10 @@ paths:
     get:
       tags:
         - Export
-      summary: Get Export
+      summary: Get a single export
+      description: |-
+        Gets a specific export by ID. The user must have access to the camera
+            associated with the export.
       operationId: get_export_exports__export_id__get
       parameters:
         - name: export_id
@@ -1612,7 +2113,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/ExportModel"
         "422":
           description: Validation Error
           content:
@@ -1623,7 +2125,8 @@ paths:
     get:
       tags:
         - Events
-      summary: Events
+      summary: Get events
+      description: Returns a list of events.
       operationId: events_events_get
       parameters:
         - name: camera
@@ -1759,10 +2262,6 @@ paths:
         - name: include_thumbnails
           in: query
           required: false
-          description: >
-            Deprecated. Thumbnail data is no longer included in the response.
-            Use the /api/events/:event_id/thumbnail.:extension endpoint instead.
-          deprecated: true
           schema:
             anyOf:
               - type: integer
@@ -1887,7 +2386,10 @@ paths:
     get:
       tags:
         - Events
-      summary: Events Explore
+      summary: Get summary of objects
+      description: |-
+        Gets a summary of objects from the database.
+            Returns a list of objects with a max of `limit` objects for each label.
       operationId: events_explore_events_explore_get
       parameters:
         - name: limit
@@ -1917,7 +2419,10 @@ paths:
     get:
       tags:
         - Events
-      summary: Event Ids
+      summary: Get events by ids
+      description: |-
+        Gets events by a list of ids.
+            Returns a list of events.
       operationId: event_ids_event_ids_get
       parameters:
         - name: ids
@@ -1946,7 +2451,10 @@ paths:
     get:
       tags:
         - Events
-      summary: Events Search
+      summary: Search events
+      description: |-
+        Searches for events in the database.
+            Returns a list of events.
       operationId: events_search_events_search_get
       parameters:
         - name: query
@@ -1977,10 +2485,6 @@ paths:
         - name: include_thumbnails
           in: query
           required: false
-          description: >
-            Deprecated. Thumbnail data is no longer included in the response.
-            Use the /api/events/:event_id/thumbnail.:extension endpoint instead.
-          deprecated: true
           schema:
             anyOf:
               - type: integer
@@ -2190,7 +2694,8 @@ paths:
     get:
       tags:
         - Events
-      summary: Event
+      summary: Get event by id
+      description: Gets an event by its id.
       operationId: event_events__event_id__get
       parameters:
         - name: event_id
@@ -2215,7 +2720,10 @@ paths:
     delete:
       tags:
         - Events
-      summary: Delete Event
+      summary: Delete event
+      description: |-
+        Deletes an event from the database.
+            Returns a success message or an error if the event is not found.
       operationId: delete_event_events__event_id__delete
       parameters:
         - name: event_id
@@ -2241,7 +2749,11 @@ paths:
     post:
       tags:
         - Events
-      summary: Set Retain
+      summary: Set event retain indefinitely
+      description: |-
+        Sets an event to retain indefinitely.
+            Returns a success message or an error if the event is not found.
+            NOTE: This is a legacy endpoint and is not supported in the frontend.
       operationId: set_retain_events__event_id__retain_post
       parameters:
         - name: event_id
@@ -2266,7 +2778,11 @@ paths:
     delete:
       tags:
         - Events
-      summary: Delete Retain
+      summary: Stop event from being retained indefinitely
+      description: |-
+        Stops an event from being retained indefinitely.
+            Returns a success message or an error if the event is not found.
+            NOTE: This is a legacy endpoint and is not supported in the frontend.
       operationId: delete_retain_events__event_id__retain_delete
       parameters:
         - name: event_id
@@ -2292,7 +2808,10 @@ paths:
     post:
       tags:
         - Events
-      summary: Send To Plus
+      summary: Send event to Frigate+
+      description: |-
+        Sends an event to Frigate+.
+            Returns a success message or an error if the event is not found.
       operationId: send_to_plus_events__event_id__plus_post
       parameters:
         - name: event_id
@@ -2323,7 +2842,11 @@ paths:
     put:
       tags:
         - Events
-      summary: False Positive
+      summary: Submit false positive to Frigate+
+      description: |-
+        Submit an event as a false positive to Frigate+.
+            This endpoint is the same as the standard Frigate+ submission endpoint,
+            but is specifically for marking an event as a false positive.
       operationId: false_positive_events__event_id__false_positive_put
       parameters:
         - name: event_id
@@ -2349,7 +2872,10 @@ paths:
     post:
       tags:
         - Events
-      summary: Set Sub Label
+      summary: Set event sub label
+      description: |-
+        Sets an event's sub label.
+            Returns a success message or an error if the event is not found.
       operationId: set_sub_label_events__event_id__sub_label_post
       parameters:
         - name: event_id
@@ -2381,7 +2907,10 @@ paths:
     post:
       tags:
         - Events
-      summary: Set Plate
+      summary: Set event license plate
+      description: |-
+        Sets an event's license plate.
+            Returns a success message or an error if the event is not found.
       operationId: set_plate_events__event_id__recognized_license_plate_post
       parameters:
         - name: event_id
@@ -2409,11 +2938,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HTTPValidationError"
+  /events/{event_id}/attributes:
+    post:
+      tags:
+        - Events
+      summary: Set custom classification attributes
+      description: |-
+        Sets an event's custom classification attributes for all attribute-type
+        models that apply to the event's object type.
+            Returns a success message or an error if the event is not found.
+      operationId: set_attributes_events__event_id__attributes_post
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Event Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventsAttributesBody"
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
   /events/{event_id}/description:
     post:
       tags:
         - Events
-      summary: Set Description
+      summary: Set event description
+      description: |-
+        Sets an event's description.
+            Returns a success message or an error if the event is not found.
       operationId: set_description_events__event_id__description_post
       parameters:
         - name: event_id
@@ -2445,7 +3013,10 @@ paths:
     put:
       tags:
         - Events
-      summary: Regenerate Description
+      summary: Regenerate event description
+      description: |-
+        Regenerates an event's description.
+            Returns a success message or an error if the event is not found.
       operationId: regenerate_description_events__event_id__description_regenerate_put
       parameters:
         - name: event_id
@@ -2463,6 +3034,43 @@ paths:
               - type: "null"
             default: thumbnails
             title: Source
+        - name: force
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: boolean
+              - type: "null"
+            default: false
+            title: Force
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericResponse"
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /description/generate:
+    post:
+      tags:
+        - Events
+      summary: Generate description embedding
+      description: |-
+        Generates an embedding for an event's description.
+            Returns a success message or an error if the event is not found.
+      operationId: generate_description_embedding_description_generate_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventsDescriptionBody"
       responses:
         "200":
           description: Successful Response
@@ -2480,7 +3088,10 @@ paths:
     delete:
       tags:
         - Events
-      summary: Delete Events
+      summary: Delete events
+      description: |-
+        Deletes a list of events from the database.
+            Returns a success message or an error if the events are not found.
       operationId: delete_events_events__delete
       requestBody:
         required: true
@@ -2505,7 +3116,13 @@ paths:
     post:
       tags:
         - Events
-      summary: Create Event
+      summary: Create manual event
+      description: |-
+        Creates a manual event in the database.
+            Returns a success message or an error if the event is not found.
+            NOTES:
+            - Creating a manual event does not trigger an update to /events MQTT topic.
+            - If a duration is set to null, the event will need to be ended manually by calling /events/{event_id}/end.
       operationId: create_event_events__camera_name___label__create_post
       parameters:
         - name: camera_name
@@ -2526,7 +3143,6 @@ paths:
             schema:
               $ref: "#/components/schemas/EventsCreateBody"
               default:
-                source_type: api
                 score: 0
                 duration: 30
                 include_recording: true
@@ -2548,7 +3164,11 @@ paths:
     put:
       tags:
         - Events
-      summary: End Event
+      summary: End manual event
+      description: |-
+        Ends a manual event.
+            Returns a success message or an error if the event is not found.
+            NOTE: This should only be used for manual events.
       operationId: end_event_events__event_id__end_put
       parameters:
         - name: event_id
@@ -2576,6 +3196,159 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HTTPValidationError"
+  /trigger/embedding:
+    post:
+      tags:
+        - Events
+      summary: Create trigger embedding
+      description: |-
+        Creates a trigger embedding for a specific trigger.
+            Returns a success message or an error if the trigger is not found.
+      operationId: create_trigger_embedding_trigger_embedding_post
+      parameters:
+        - name: camera_name
+          in: query
+          required: true
+          schema:
+            type: string
+            title: Camera Name
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            title: Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerEmbeddingBody"
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Create Trigger Embedding Trigger Embedding Post
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /trigger/embedding/{camera_name}/{name}:
+    put:
+      tags:
+        - Events
+      summary: Update trigger embedding
+      description: |-
+        Updates a trigger embedding for a specific trigger.
+            Returns a success message or an error if the trigger is not found.
+      operationId: update_trigger_embedding_trigger_embedding__camera_name___name__put
+      parameters:
+        - name: camera_name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Camera Name
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerEmbeddingBody"
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: >-
+                  Response Update Trigger Embedding Trigger Embedding  Camera
+                  Name   Name  Put
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+    delete:
+      tags:
+        - Events
+      summary: Delete trigger embedding
+      description: |-
+        Deletes a trigger embedding for a specific trigger.
+            Returns a success message or an error if the trigger is not found.
+      operationId: delete_trigger_embedding_trigger_embedding__camera_name___name__delete
+      parameters:
+        - name: camera_name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Camera Name
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Name
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: >-
+                  Response Delete Trigger Embedding Trigger Embedding  Camera
+                  Name   Name  Delete
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /triggers/status/{camera_name}:
+    get:
+      tags:
+        - Events
+      summary: Get triggers status
+      description: |-
+        Gets the status of all triggers for a specific camera.
+            Returns a success message or an error if the camera is not found.
+      operationId: get_triggers_status_triggers_status__camera_name__get
+      parameters:
+        - name: camera_name
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Camera Name
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Triggers Status Triggers Status  Camera Name  Get
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
   /{camera_name}:
     get:
       tags:
@@ -2587,7 +3360,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: fps
           in: query
@@ -2674,7 +3449,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
       responses:
         "200":
@@ -2699,7 +3476,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: extension
           in: path
@@ -2746,6 +3525,14 @@ paths:
               - type: integer
               - type: "null"
             title: Motion
+        - name: paths
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: integer
+              - type: "null"
+            title: Paths
         - name: regions
           in: query
           required: false
@@ -2803,7 +3590,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: frame_time
           in: path
@@ -2849,7 +3638,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: frame_time
           in: path
@@ -2929,7 +3720,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: timezone
           in: query
@@ -2956,7 +3749,7 @@ paths:
         - Media
       summary: Recordings
       description: >-
-        Return specific camera recordings between the given "after"/"end" times.
+        Return specific camera recordings between the given 'after'/'end' times.
         If not provided the last hour will be used
       operationId: recordings__camera_name__recordings_get
       parameters:
@@ -2964,21 +3757,23 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: after
           in: query
           required: false
           schema:
             type: number
-            default: 1752611870.43948
+            default: 1759932070.40171
             title: After
         - name: before
           in: query
           required: false
           schema:
             type: number
-            default: 1752615470.43949
+            default: 1759935670.40172
             title: Before
       responses:
         "200":
@@ -2986,6 +3781,56 @@ paths:
           content:
             application/json:
               schema: {}
+        "422":
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPValidationError"
+  /recordings/unavailable:
+    get:
+      tags:
+        - Media
+      summary: No Recordings
+      description: Get time ranges with no recordings.
+      operationId: no_recordings_recordings_unavailable_get
+      parameters:
+        - name: cameras
+          in: query
+          required: false
+          schema:
+            type: string
+            default: all
+            title: Cameras
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: number
+            title: Before
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: number
+            title: After
+        - name: scale
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 30
+            title: Scale
+      responses:
+        "200":
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                title: Response No Recordings Recordings Unavailable Get
         "422":
           description: Validation Error
           content:
@@ -3006,7 +3851,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: start_ts
           in: path
@@ -3046,7 +3893,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: start_ts
           in: path
@@ -3104,7 +3953,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
       responses:
         "200":
@@ -3151,7 +4002,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: tz_name
           in: path
@@ -3187,6 +4040,15 @@ paths:
           schema:
             type: string
             title: Event Id
+        - name: padding
+          in: query
+          required: false
+          schema:
+            type: integer
+            description: Padding to apply to the vod.
+            default: 0
+            title: Padding
+          description: Padding to apply to the vod.
       responses:
         "200":
           description: Successful Response
@@ -3295,8 +4157,7 @@ paths:
           in: path
           required: true
           schema:
-            type: string
-            title: Extension
+            $ref: "#/components/schemas/Extension"
         - name: max_cache_age
           in: query
           required: false
@@ -3339,7 +4200,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: color
           in: query
@@ -3367,7 +4230,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HTTPValidationError"
-  /events/{event_id}/snapshot-clean.png:
+  /events/{event_id}/snapshot-clean.webp:
     get:
       tags:
         - Media
@@ -3412,6 +4275,15 @@ paths:
           schema:
             type: string
             title: Event Id
+        - name: padding
+          in: query
+          required: false
+          schema:
+            type: integer
+            description: Padding to apply to clip.
+            default: 0
+            title: Padding
+          description: Padding to apply to clip.
       responses:
         "200":
           description: Successful Response
@@ -3460,7 +4332,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: start_ts
           in: path
@@ -3506,7 +4380,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: start_ts
           in: path
@@ -3639,7 +4515,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: label
           in: path
@@ -3670,7 +4548,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: label
           in: path
@@ -3701,7 +4581,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: label
           in: path
@@ -3735,7 +4617,9 @@ paths:
           in: path
           required: true
           schema:
-            type: string
+            anyOf:
+              - type: string
+              - type: "null"
             title: Camera Name
         - name: label
           in: path
@@ -3763,6 +4647,16 @@ components:
           type: integer
           title: Requires Restart
           default: 1
+        update_topic:
+          anyOf:
+            - type: string
+            - type: "null"
+          title: Update Topic
+        config_data:
+          anyOf:
+            - type: object
+            - type: "null"
+          title: Config Data
       type: object
       title: AppConfigSetBody
     AppPostLoginBody:
@@ -3815,6 +4709,15 @@ components:
       required:
         - role
       title: AppPutRoleBody
+    AudioTranscriptionBody:
+      properties:
+        event_id:
+          type: string
+          title: Event Id
+      type: object
+      required:
+        - event_id
+      title: AudioTranscriptionBody
     Body_recognize_face_faces_recognize_post:
       properties:
         file:
@@ -3861,6 +4764,18 @@ components:
         - total_alert
         - total_detection
       title: DayReview
+    DeleteFaceImagesBody:
+      properties:
+        ids:
+          items:
+            type: string
+          type: array
+          title: Ids
+          description: List of image filenames to delete from the face folder
+      type: object
+      required:
+        - ids
+      title: DeleteFaceImagesBody
     EventCreateResponse:
       properties:
         success:
@@ -4005,12 +4920,6 @@ components:
       title: EventUploadPlusResponse
     EventsCreateBody:
       properties:
-        source_type:
-          anyOf:
-            - type: string
-            - type: "null"
-          title: Source Type
-          default: api
         sub_label:
           anyOf:
             - type: string
@@ -4112,6 +5021,59 @@ components:
       required:
         - subLabel
       title: EventsSubLabelBody
+    EventsAttributesBody:
+      properties:
+        attributes:
+          type: object
+          title: Attributes
+          description: Object with model names as keys and attribute values
+          additionalProperties:
+            type: string
+      type: object
+      required:
+        - attributes
+      title: EventsAttributesBody
+    ExportModel:
+      properties:
+        id:
+          type: string
+          title: Id
+          description: Unique identifier for the export
+        camera:
+          type: string
+          title: Camera
+          description: Camera name associated with this export
+        name:
+          type: string
+          title: Name
+          description: Friendly name of the export
+        date:
+          type: number
+          title: Date
+          description: Unix timestamp when the export was created
+        video_path:
+          type: string
+          title: Video Path
+          description: File path to the exported video
+        thumb_path:
+          type: string
+          title: Thumb Path
+          description: File path to the export thumbnail
+        in_progress:
+          type: boolean
+          title: In Progress
+          description: Whether the export is currently being processed
+      type: object
+      required:
+        - id
+        - camera
+        - name
+        - date
+        - video_path
+        - thumb_path
+        - in_progress
+      title: ExportModel
+      description: Model representing a single export.
     ExportRecordingsBody:
       properties:
         playback:
@@ -4149,6 +5111,53 @@ components:
         - jpg
         - jpeg
       title: Extension
+    FaceRecognitionResponse:
+      properties:
+        success:
+          type: boolean
+          title: Success
+          description: Whether the face recognition was successful
+        score:
+          anyOf:
+            - type: number
+            - type: "null"
+          title: Score
+          description: Confidence score of the recognition (0-1)
+        face_name:
+          anyOf:
+            - type: string
+            - type: "null"
+          title: Face Name
+          description: The recognized face name if successful
+      type: object
+      required:
+        - success
+      title: FaceRecognitionResponse
+      description: >-
+        Response model for face recognition endpoint.
+
+
+        Returns the result of attempting to recognize a face from an uploaded
+        image.
+    FacesResponse:
+      additionalProperties:
+        items:
+          type: string
+        type: array
+      type: object
+      title: FacesResponse
+      description: |-
+        Response model for the get_faces endpoint.
+
+        Returns a mapping of face names to lists of image filenames.
+        Each face name corresponds to a directory in the faces folder,
+        and the list contains the names of image files for that face.
+
+        Example:
+            {
+                "john_doe": ["face1.webp", "face2.jpg"],
+                "jane_smith": ["face3.png"]
+            }
     GenericResponse:
       properties:
         success:
@@ -4204,6 +5213,37 @@ components:
         - recordings
         - preview
       title: PlaybackSourceEnum
+    PreviewModel:
+      properties:
+        camera:
+          type: string
+          title: Camera
+          description: Camera name for this preview
+        src:
+          type: string
+          title: Src
+          description: Path to the preview video file
+        type:
+          type: string
+          title: Type
+          description: MIME type of the preview video (video/mp4)
+        start:
+          type: number
+          title: Start
+          description: Unix timestamp when the preview starts
+        end:
+          type: number
+          title: End
+          description: Unix timestamp when the preview ends
+      type: object
+      required:
+        - camera
+        - src
+        - type
+        - start
+        - end
+      title: PreviewModel
+      description: Model representing a single preview clip.
     RegenerateDescriptionEnum:
       type: string
       enum:
@@ -4306,6 +5346,28 @@ components:
         - alert
         - detection
       title: SeverityEnum
+    StartExportResponse:
+      properties:
+        success:
+          type: boolean
+          title: Success
+          description: Whether the export was started successfully
+        message:
+          type: string
+          title: Message
+          description: Status or error message
+        export_id:
+          anyOf:
+            - type: string
+            - type: "null"
+          title: Export Id
+          description: The export ID if successfully started
+      type: object
+      required:
+        - success
+        - message
+      title: StartExportResponse
+      description: Response model for starting an export.
     SubmitPlusBody:
       properties:
         include_annotation:
@@ -4314,6 +5376,30 @@ components:
           default: 1
       type: object
       title: SubmitPlusBody
+    TriggerEmbeddingBody:
+      properties:
+        type:
+          $ref: "#/components/schemas/TriggerType"
+        data:
+          type: string
+          title: Data
+        threshold:
+          type: number
+          maximum: 1
+          minimum: 0
+          title: Threshold
+          default: 0.5
+      type: object
+      required:
+        - type
+        - data
+      title: TriggerEmbeddingBody
+    TriggerType:
+      type: string
+      enum:
+        - thumbnail
+        - description
+      title: TriggerType
     ValidationError:
       properties:
         loc:

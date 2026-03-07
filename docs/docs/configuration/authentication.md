@@ -29,6 +29,10 @@ auth:
   reset_admin_password: true
 ```
 
+## Password guidance
+
+Constructing secure passwords and managing them properly is important. Frigate requires a minimum length of 12 characters. For guidance on password standards see [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html). To learn what makes a password truly secure, read this [article](https://medium.com/peerio/how-to-build-a-billion-dollar-password-3d92568d9277).
+
 ## Login failure rate limiting
 
 In order to limit the risk of brute force attacks, rate limiting is available for login failures. This is implemented with SlowApi, and the string notation for valid values is available in [the documentation](https://limits.readthedocs.io/en/stable/quickstart.html#examples).
@@ -59,6 +63,7 @@ The default session length for user authentication in Frigate is 24 hours. This 
 While the default provides a balance of security and convenience, you can customize this duration to suit your specific security requirements and user experience preferences. The session length is configured in seconds.
 
 The default value of `86400` will expire the authentication session after 24 hours. Some other examples:
+
 - `0`: Setting the session length to 0 will require a user to log in every time they access the application or after a very short, immediate timeout.
 - `604800`: Setting the session length to 604800 will require a user to log in if the token is not refreshed for 7 days.
 
@@ -80,7 +85,7 @@ python3 -c 'import secrets; print(secrets.token_hex(64))'
 Frigate looks for a JWT token secret in the following order:
 
 1. An environment variable named `FRIGATE_JWT_SECRET`
-2. A docker secret named `FRIGATE_JWT_SECRET` in `/run/secrets/`
+2. A file named `FRIGATE_JWT_SECRET` in the directory specified by the `CREDENTIALS_DIRECTORY` environment variable (defaults to the Docker Secrets directory: `/run/secrets/`)
 3. A `jwt_secret` option from the Home Assistant Add-on options
 4. A `.jwt_secret` file in the config directory
 
@@ -123,7 +128,7 @@ proxy:
     role: x-forwarded-groups
 ```
 
-Frigate supports both `admin` and `viewer` roles (see below). When using port `8971`, Frigate validates these headers and subsequent requests use the headers `remote-user` and `remote-role` for authorization.
+Frigate supports `admin`, `viewer`, and custom roles (see below). When using port `8971`, Frigate validates these headers and subsequent requests use the headers `remote-user` and `remote-role` for authorization.
 
 A default role can be provided. Any value in the mapped `role` header will override the default.
 
@@ -133,6 +138,38 @@ proxy:
   default_role: viewer
 ```
 
+## Role mapping
+
+In some environments, upstream identity providers (OIDC, SAML, LDAP, etc.) do not pass a Frigate-compatible role directly, but instead pass one or more group claims. To handle this, Frigate supports a `role_map` that translates upstream group names into Frigate’s internal roles (`admin`, `viewer`, or custom).
+
+```yaml
+proxy:
+  ...
+  header_map:
+    user: x-forwarded-user
+    role: x-forwarded-groups
+    role_map:
+      admin:
+        - sysadmins
+        - access-level-security
+      viewer:
+        - camera-viewer
+      operator:  # Custom role mapping
+        - operators
+```
+
+In this example:
+
+- If the proxy passes a role header containing `sysadmins` or `access-level-security`, the user is assigned the `admin` role.
+- If the proxy passes a role header containing `camera-viewer`, the user is assigned the `viewer` role.
+- If the proxy passes a role header containing `operators`, the user is assigned the `operator` custom role.
+- If no mapping matches, Frigate falls back to `default_role` if configured.
+- If `role_map` is not defined, Frigate assumes the role header directly contains `admin`, `viewer`, or a custom role name.
+
+**Note on matching semantics:**
+
+- Admin precedence: if the `admin` mapping matches, Frigate resolves the session to `admin` to avoid accidental downgrade when a user belongs to multiple groups (for example both `admin` and `viewer` groups).
+
 #### Port Considerations
 
 **Authenticated Port (8971)**
@@ -141,6 +178,7 @@ proxy:
 - The `remote-role` header determines the user’s privileges:
   - **admin** → Full access (user management, configuration changes).
   - **viewer** → Read-only access.
+  - **Custom roles** → Read-only access limited to the cameras defined in `auth.roles[role]`.
 - Ensure your **proxy sends both user and role headers** for proper role enforcement.
 
 **Unauthenticated Port (5000)**
@@ -186,6 +224,41 @@ Frigate supports user roles to control access to certain features in the UI and 
 
 - **admin**: Full access to all features, including user management and configuration.
 - **viewer**: Read-only access to the UI and API, including viewing cameras, review items, and historical footage. Configuration editor and settings in the UI are inaccessible.
+- **Custom Roles**: Arbitrary role names (alphanumeric, dots/underscores) with specific camera permissions. These extend the system for granular access (e.g., "operator" for select cameras).
+
+### Custom Roles and Camera Access
+
+The viewer role provides read-only access to all cameras in the UI and API. Custom roles allow admins to limit read-only access to specific cameras. Each role specifies an array of allowed camera names. If a user is assigned a custom role, their account is like the **viewer** role - they can only view Live, Review/History, Explore, and Export for the designated cameras. Backend API endpoints enforce this server-side (e.g., returning 403 for unauthorized cameras), and the frontend UI filters content accordingly (e.g., camera dropdowns show only permitted options).
+
+### Role Configuration Example
+
+```yaml
+cameras:
+  front_door:
+    # ... camera config
+  side_yard:
+    # ... camera config
+  garage:
+    # ... camera config
+
+auth:
+  enabled: true
+  roles:
+    operator: # Custom role
+      - front_door
+      - garage # Operator can access front and garage
+    neighbor:
+      - side_yard
+```
+
+If you want to provide access to all cameras to a specific user, just use the **viewer** role.
+
+### Managing User Roles
+
+1. Log in as an **admin** user via port `8971` (preferred), or unauthenticated via port `5000`.
+2. Navigate to **Settings**.
+3. In the **Users** section, edit a user’s role by selecting from available roles (admin, viewer, or custom).
+4. In the **Roles** section, add/edit/delete custom roles (select cameras via switches). Deleting a role auto-reassigns users to "viewer".
 
 ### Role Enforcement
 
@@ -205,3 +278,42 @@ To use role-based access control, you must connect to Frigate via the **authenti
 1. Log in as an **admin** user via port `8971`.
 2. Navigate to **Settings > Users**.
 3. Edit a user’s role by selecting **admin** or **viewer**.
+
+## API Authentication Guide
+
+### Getting a Bearer Token
+
+To use the Frigate API, you need to authenticate first. Follow these steps to obtain a Bearer token:
+
+#### 1. Login
+
+Make a POST request to `/login` with your credentials:
+
+```bash
+curl -i -X POST https://frigate_ip:8971/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"user": "admin", "password": "your_password"}'
+```
+
+:::note
+
+You may need to include `-k` in the argument list in these steps (eg: `curl -k -i -X POST ...`) if your Frigate instance is using a self-signed certificate.
+
+:::
+
+The response will contain a cookie with the JWT token.
+
+#### 2. Using the Bearer Token
+
+Once you have the token, include it in the Authorization header for subsequent requests:
+
+```bash
+curl -H "Authorization: Bearer <your_token>" https://frigate_ip:8971/api/profile
+```
+
+#### 3. Token Lifecycle
+
+- Tokens are valid for the configured session length
+- Tokens are automatically refreshed when you visit the `/auth` endpoint
+- Tokens are invalidated when the user's password is changed
+- Use `/logout` to clear your session cookie

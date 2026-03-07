@@ -9,7 +9,11 @@
     "masksAndZones": "Maski / Strefy",
     "motionTuner": "Konfigurator Ruchu",
     "debug": "Debugowanie",
-    "enrichments": "Wzbogacenia"
+    "enrichments": "Wzbogacenia",
+    "triggers": "Wyzwalacze",
+    "roles": "Role",
+    "cameraManagement": "Zarządzanie",
+    "cameraReview": "Przegląd"
   },
   "dialog": {
     "unsavedChanges": {
@@ -22,7 +26,7 @@
     "noCamera": "Brak Kamery"
   },
   "general": {
-    "title": "Ustawienia Ogólne",
+    "title": "Ustawienia interfejsu użytkownika",
     "storedLayouts": {
       "title": "Zapisane Układy",
       "clearAll": "Wyczyść Wszystkie Układy",
@@ -46,6 +50,14 @@
       "playAlertVideos": {
         "label": "Odtwarzaj Filmy Alarmowe",
         "desc": "Domyślnie, ostatnie alerty na panelu Na Żywo są odtwarzane jako małe zapętlone filmy. Wyłącz tę opcję, aby pokazywać tylko statyczny obraz ostatnich alertów na tym urządzeniu/przeglądarce."
+      },
+      "displayCameraNames": {
+        "label": "Zawsze pokazuj nazwy kamer",
+        "desc": "Zawsze pokazuj nazwę kamery w widoku wielu kamer."
+      },
+      "liveFallbackTimeout": {
+        "label": "Przekroczono czas oczekiwania dla strumienia",
+        "desc": "W wypadku utraty strumienia wysokiej jakości, użyj trybu niskiej przepustowości po X sekund od utracenia połączenia. Sugerowana wartość: 3."
       }
     },
     "cameraGroupStreaming": {
@@ -77,12 +89,14 @@
     "masksAndZones": "Edytor Masek i Stref - Frigate",
     "frigatePlus": "Ustawienia Frigate+ - Frigate",
     "classification": "Ustawienia Klasyfikacji - Frigate",
-    "general": "Ustawienia Ogólne - Frigate",
+    "general": "Ustawienia Interfejsu - Frigate",
     "authentication": "Ustawienia Uwierzytelniania - Frigate",
     "motionTuner": "Konfigurator Ruchu - Frigate",
     "object": "Debug - Frigate",
     "notifications": "Ustawienia powiadomień - Frigate",
-    "enrichments": "Ustawienia wzbogacania - Frigate"
+    "enrichments": "Ustawienia wzbogacania - Frigate",
+    "cameraManagement": "Zarządzanie kamerami – Frigate",
+    "cameraReview": "Ustawienia przeglądu kamer - Frigate"
   },
   "classification": {
     "title": "Ustawienia Klasyfikacji",
@@ -173,11 +187,48 @@
       "alerts": "Alerty ",
       "title": "Przegląd",
       "detections": "Wykrycia ",
-      "desc": "Włącz/wyłącz alerty i wykrywania dla tej kamery. Po wyłączeniu nie będą generowane nowe elementy do przeglądu."
+      "desc": "Tymczasowo włącz/wyłącz alerty i wykrywania dla tej kamery do czasu restartu Frigate. Po wyłączeniu nie będą generowane nowe elementy do przeglądu. "
     },
     "streams": {
-      "desc": "Wyłączenie kamery całkowicie zatrzymuje przetwarzanie strumieni tej kamery przez Frigate. Wykrywanie, nagrywanie i debugowanie będą niedostępne.<br /><em>Uwaga: Nie wyłącza to przekazywania strumieni go2rtc.</em>",
+      "desc": "Tymczasowo wyłącz kamerę dopóki Frigate nie uruchomi się ponownie. Wyłączenie kamery całkowicie zatrzymuje przetwarzanie strumieni tej kamery przez Frigate. Wykrywanie, nagrywanie i debugowanie będą niedostępne.<br /><em>Uwaga: Nie wyłącza to przekazywania strumieni go2rtc.</em>",
       "title": "Strumienie"
+    },
+    "object_descriptions": {
+      "title": "Opisy obiektów wygenerowane przez Sztuczną Inteligencję",
+      "desc": "Tymczasowo włącz/wyłącz opisy obiektów generowane przez SI. Gdy zostanie to wyłączone, prośby o opis śledzonych obiektów dla tej kamery nie będzie przesyłany do SI."
+    },
+    "review_descriptions": {
+      "title": "Opis recenzji od SI",
+      "desc": "Tymczasowo włącz/wyłącz recenzje opisów SI dla tej kamery. Gdy wyłączone prośby o wykonanie opisów nie zostaną przekazane do SI dla tej kamery."
+    },
+    "addCamera": "Dodaj nową kamerę",
+    "editCamera": "Edytuj kamerę:",
+    "selectCamera": "Wybierz kamerę",
+    "backToSettings": "Powrót do ustawień kamery",
+    "cameraConfig": {
+      "add": "Dodaj kamerę",
+      "edit": "Edytuj kamerę",
+      "description": "Konfiguracja ustawień kamery wraz ze strumieniem wejściowym i rolami.",
+      "name": "Nazwa kamery",
+      "nameRequired": "Nazwa kamery jest wymagana",
+      "nameLength": "Nazwa kamery musi być krótsza niż 24 znaki.",
+      "namePlaceholder": "np. drzwi_wejsciowe",
+      "enabled": "Włączony",
+      "ffmpeg": {
+        "inputs": "Strumienie wejściowe",
+        "path": "Ścieżka do strumienia",
+        "pathRequired": "Ścieżka do strumienia jest wymagana",
+        "pathPlaceholder": "rtsp://...",
+        "roles": "Role",
+        "rolesRequired": "Przynajmniej jedna rola jest wymagana",
+        "rolesUnique": "Każda z ról (audio, detect, record) może być przypisana tylko do jednego strumienia",
+        "addInput": "Dodaj strumień wejściowy",
+        "removeInput": "Usuń strumień wejściowy",
+        "inputsRequired": "Przynajmniej jeden strumień wejściowy jest wymagany"
+      },
+      "toast": {
+        "success": "Konfiguracja kamery {{cameraName}} została zapisana"
+      }
     }
   },
   "masksAndZones": {
@@ -191,7 +242,8 @@
           "mustNotBeSameWithCamera": "Nazwa strefy nie może być taka sama jak nazwa kamery.",
           "alreadyExists": "Strefa z tą nazwą już istnieje dla tej kamery.",
           "hasIllegalCharacter": "Nazwa strefy zawiera niedozwolone znaki.",
-          "mustNotContainPeriod": "Nazwa strefy nie może zawierać kropki."
+          "mustNotContainPeriod": "Nazwa strefy nie może zawierać kropki.",
+          "mustHaveAtLeastOneLetter": "Nazwa strefy musi zawierać co najmniej jedną literę."
         }
       },
       "distance": {
@@ -226,6 +278,11 @@
         },
         "error": {
           "mustBeFinished": "Rysowanie wielokąta musi być zakończone przed zapisaniem."
+        },
+        "type": {
+          "object_mask": "maska obiektowa",
+          "motion_mask": "maska ruchu",
+          "zone": "strefa"
         }
       },
       "speed": {
@@ -247,7 +304,7 @@
       "name": {
         "title": "Nazwa",
         "inputPlaceHolder": "Wprowadź nazwę…",
-        "tips": "Nazwa musi mieć co najmniej 2 znaki i nie może być taka sama jak nazwa kamery lub innej strefy."
+        "tips": "Nazwa musi mieć co najmniej 1 znak i nie może być taka sama jak nazwa kamery lub innej strefy."
       },
       "objects": {
         "title": "Obiekty",
@@ -285,7 +342,7 @@
         "lineDDistance": "Odległość linii D ({{unit}})"
       },
       "toast": {
-        "success": "Strefa ({{zoneName}}) została zapisana. Uruchom ponownie Frigate, aby zastosować zmiany."
+        "success": "Strefa ({{zoneName}}) została zapisana."
       }
     },
     "motionMasks": {
@@ -306,8 +363,8 @@
       },
       "toast": {
         "success": {
-          "title": "{{polygonName}} został zapisany. Uruchom ponownie Frigate, aby zastosować zmiany.",
-          "noName": "Maska Ruchu została zapisana. Uruchom ponownie Frigate, aby zastosować zmiany."
+          "title": "{{polygonName}} został zapisany.",
+          "noName": "Maska Ruchu została zapisana."
         }
       },
       "label": "Maska ruchu",
@@ -320,8 +377,8 @@
     "objectMasks": {
       "toast": {
         "success": {
-          "title": "{{polygonName}} został zapisany. Uruchom ponownie Frigate aby wprowadzić zmiany.",
-          "noName": "Maska Obiektu została zapisana. Uruchom ponownie Frigate, aby zastosować zmiany."
+          "title": "{{polygonName}} został zapisany.",
+          "noName": "Maska Obiektu została zapisana."
         }
       },
       "objects": {
@@ -400,6 +457,19 @@
       "tips": "Włącz tę opcję, aby narysować prostokąt na obrazie kamery w celu pokazania jego obszaru i proporcji. Te wartości mogą być następnie użyte do ustawienia parametrów filtra kształtu obiektu w twojej konfiguracji.",
       "desc": "Narysuj prostokąt na obrazie, aby zobaczyć szczegóły obszaru i proporcji",
       "area": "Obszar"
+    },
+    "openCameraWebUI": "Otwórz interfejs kamery {{camera}}",
+    "audio": {
+      "title": "Audio",
+      "noAudioDetections": "Nie wykryto dźwięku",
+      "score": "wynik",
+      "currentRMS": "Bieżąca moc RMS",
+      "currentdbFS": "Bieżące dbFS"
+    },
+    "paths": {
+      "title": "Ścieżki",
+      "desc": "Pokaż punkty znaczące ścieżki dla śledzonego obiektu",
+      "tips": "<p><strong>Ścieżki</strong></p><br><p>Linie i koła wskażą punkty znaczące po których poruszał się obiekt podczas śledzenia.</p>"
     }
   },
   "motionDetectionTuner": {
@@ -427,7 +497,7 @@
   },
   "users": {
     "addUser": "Dodaj Użytkownika",
-    "updatePassword": "Aktualizuj Hasło",
+    "updatePassword": "Resetuj Hasło",
     "toast": {
       "success": {
         "createUser": "Użytkownik {{user}} został utworzony pomyślnie",
@@ -448,7 +518,7 @@
       "role": "Rola",
       "noUsers": "Nie znaleziono użytkowników.",
       "changeRole": "Zmień rolę użytkownika",
-      "password": "Hasło",
+      "password": "Resetuj hasło",
       "deleteUser": "Usuń użytkownika"
     },
     "dialog": {
@@ -473,7 +543,16 @@
           },
           "title": "Hasło",
           "placeholder": "Wprowadź hasło",
-          "notMatch": "Hasła nie pasują"
+          "notMatch": "Hasła nie pasują",
+          "show": "Pokaż hasło",
+          "hide": "Ukryj hasło",
+          "requirements": {
+            "title": "Wymagania hasła:",
+            "length": "Co najmniej 12 znaków",
+            "uppercase": "Co najmniej jedna duża litera",
+            "digit": "Co najmniej jedna cyfra",
+            "special": "Co najmniej jeden znak specjalny (!@#$%^&*(),.?\":{}|<>)"
+          }
         },
         "newPassword": {
           "placeholder": "Wprowadź nowe hasło",
@@ -483,7 +562,11 @@
           }
         },
         "usernameIsRequired": "Nazwa użytkownika jest wymagana",
-        "passwordIsRequired": "Hasło jest wymagane"
+        "passwordIsRequired": "Hasło jest wymagane",
+        "currentPassword": {
+          "title": "Aktualne hasło",
+          "placeholder": "Wprowadź aktualne hasło"
+        }
       },
       "changeRole": {
         "desc": "Aktualizuj uprawnienia dla <strong>{{username}}</strong>",
@@ -492,7 +575,8 @@
           "admin": "Admin",
           "adminDesc": "Pełny dostęp do wszystkich funkcjonalności.",
           "viewerDesc": "Ograniczony wyłącznie do pulpitów na żywo, przeglądania, eksploracji i eksportu.",
-          "viewer": "Przeglądający"
+          "viewer": "Przeglądający",
+          "customDesc": "Własna rola z dedykowanym dostępem do kamery."
         },
         "title": "Zmień rolę użytkownika",
         "select": "Wybierz role"
@@ -513,7 +597,12 @@
         "setPassword": "Ustaw hasło",
         "desc": "Utwórz silne hasło, aby zabezpieczyć to konto.",
         "cannotBeEmpty": "Hasło nie może być puste",
-        "doNotMatch": "Hasła nie pasują do siebie"
+        "doNotMatch": "Hasła nie pasują do siebie",
+        "currentPasswordRequired": "Wymagane jest aktualne hasło",
+        "incorrectCurrentPassword": "Aktualne hasło jest nieprawidłowe",
+        "passwordVerificationFailed": "Nie udało się zweryfikować hasła",
+        "multiDeviceWarning": "Wszystkie inne urządzenia, na których jesteś zalogowany, będą wymagały ponownego zalogowania się w ciągu {{refresh_time}}.",
+        "multiDeviceAdmin": "Możesz również wymusić natychmiastowe ponowne uwierzytelnienie wszystkich użytkowników poprzez zmianę sekretu JWT."
       }
     },
     "management": {
@@ -640,7 +729,7 @@
         }
       }
     },
-    "title": "Ustawienia wzbogacania",
+    "title": "Ustawienia wzbogaceń",
     "unsavedChanges": "Niezapisane zmiany ustawień wzbogacania",
     "birdClassification": {
       "title": "Klasyfikacja ptaków",
@@ -682,6 +771,461 @@
     "toast": {
       "success": "Ustawienia wzbogacania zostały zapisane. Uruchom ponownie Frigate, aby zastosować zmiany.",
       "error": "Nie udało się zapisać zmian konfiguracji: {{errorMessage}}"
+    }
+  },
+  "roles": {
+    "management": {
+      "title": "Zarządzanie rolami podglądu",
+      "desc": "Zarządzaj własnymi rolami podglądu i ich dostępem do kamer dla tej instancji Frigate."
+    },
+    "addRole": "Dodaj rolę",
+    "table": {
+      "role": "Rola",
+      "cameras": "Kamery",
+      "actions": "Akcje",
+      "noRoles": "Brak własnych ról.",
+      "editCameras": "Edytuj kamery",
+      "deleteRole": "Usuń rolę"
+    },
+    "toast": {
+      "success": {
+        "createRole": "Utworzono rolę {{role}}",
+        "updateCameras": "Zaktualizowano kamery dla roli {{role}}",
+        "deleteRole": "Rola {{role}} została usunięta",
+        "userRolesUpdated_one": "{{count}} użytkownik przypisany do tej roli został zaktualizowany do roli 'viewer', która ma dostęp do wszystkich kamer.",
+        "userRolesUpdated_few": "{{count}} użytkowników przypisanych do tej roli zostało zaktualizowanych do roli 'viewer', która ma dostęp do wszystkich kamer.",
+        "userRolesUpdated_many": "{{count}} użytkowników przypisanych do tej roli zostało zaktualizowanych do roli 'viewer', która ma dostęp do wszystkich kamer."
+      },
+      "error": {
+        "createRoleFailed": "Nie udało się utworzyć roli: {{errorMessage}}",
+        "updateCamerasFailed": "Nie udało się zaktualizować kamery: {{errorMessage}}",
+        "deleteRoleFailed": "Nie udało się usunąć roli: {{errorMessage}}",
+        "userUpdateFailed": "Nie udało się zaktualizować ról użytkownika: {{errorMessage}}"
+      }
+    },
+    "dialog": {
+      "createRole": {
+        "title": "Dodaj nową rolę",
+        "desc": "Dodaj nową rolę i określ prawa dostępu do kamer."
+      },
+      "editCameras": {
+        "title": "Edytuj kamery roli",
+        "desc": "Aktualizuj dostęp do kamer dla roli <strong>{{role}}</strong>."
+      },
+      "deleteRole": {
+        "title": "Usuń rolę",
+        "desc": "Ta akcja nie może zostać wycofana. To usunie rolę na stałe i przypisze jej użytkowników do roli 'viewer' która ma dostęp do wszystkich kamer.",
+        "warn": "Czy na pewno chcesz usunąć rolę <strong>{{role}}</strong>?",
+        "deleting": "Usuwanie..."
+      },
+      "form": {
+        "role": {
+          "title": "Nazwa roli",
+          "placeholder": "Wprowadź nazwę roli",
+          "desc": "Tylko litery, liczby, kropki i podkreślenie są dozwolone.",
+          "roleIsRequired": "Nazwa roli jest wymagana",
+          "roleOnlyInclude": "Nazwa roli może zawierać litery, liczby, . albo _",
+          "roleExists": "Taka rola już istnieje."
+        },
+        "cameras": {
+          "title": "Kamery",
+          "desc": "Wybierz do jakich kamer ta rola ma dostęp. Wymagana jest przynajmniej jedna kamera.",
+          "required": "Przynajmniej jedna kamera musi zostać wybrana."
+        }
+      }
+    }
+  },
+  "triggers": {
+    "documentTitle": "Wyzwalacze",
+    "management": {
+      "title": "Wyzwalacze",
+      "desc": "Zarządzaj wyzwalaczami dla kamery {{camera}}. Użyj typu miniatury, aby aktywować miniatury podobne do wybranego śledzonego obiektu, i typu opisu, aby aktywować opisy podobne do określonego tekstu."
+    },
+    "addTrigger": "Dodaj wyzwalacz",
+    "table": {
+      "name": "Nazwa",
+      "type": "Typ",
+      "content": "Zawartość",
+      "threshold": "Próg",
+      "actions": "Akcje",
+      "noTriggers": "Brak wyzwalaczy dla tej kamery.",
+      "edit": "Edytuj",
+      "deleteTrigger": "Usuń wyzwalacz",
+      "lastTriggered": "Ostatnio wyzwolony"
+    },
+    "type": {
+      "thumbnail": "Miniaturka",
+      "description": "Opis"
+    },
+    "actions": {
+      "alert": "Oznacz jako alarm",
+      "notification": "Wyślij powiadomienie",
+      "sub_label": "Dodaj podetykietę",
+      "attribute": "Dodaj atrybut"
+    },
+    "dialog": {
+      "createTrigger": {
+        "title": "Utwórz wyzwalacz",
+        "desc": "Utwórz wyzwalacz dla kamery {{camera}}"
+      },
+      "editTrigger": {
+        "title": "Edytuj wyzwalacz",
+        "desc": "Edytuj ustawienia wyzwalacza na kamerze {{camera}}"
+      },
+      "deleteTrigger": {
+        "title": "Usuń wyzwalacz",
+        "desc": "Czy na pewno chcesz usunąć wyzwalacz <strong>{{triggerName}}</strong>? To działanie jest nieodwracalne."
+      },
+      "form": {
+        "name": {
+          "title": "Nazwa",
+          "placeholder": "Wprowadź nazwę wyzwalacza",
+          "error": {
+            "minLength": "Pole musi mieć co najmniej 2 znaki.",
+            "invalidCharacters": "Pole może zawierać jedynie litery, liczby, podkreślenie i myślniki.",
+            "alreadyExists": "Wyzwalacz o tej nazwie istnieje już dla tej kamery."
+          },
+          "description": "Wprowadź unikalną nazwę lub opis, aby zidentyfikować ten wyzwalacz"
+        },
+        "enabled": {
+          "description": "Włącz lub wyłącz ten wyzwalacz"
+        },
+        "type": {
+          "title": "Typ",
+          "placeholder": "Wybierz typ wyzwalacza",
+          "description": "Uruchom, gdy wykryty zostanie podobny opis śledzonego obiektu",
+          "thumbnail": "Uruchom, gdy wykryta zostanie podobna miniatura śledzonego obiektu"
+        },
+        "content": {
+          "title": "Zawartość",
+          "imagePlaceholder": "Wybierz miniaturkę",
+          "textPlaceholder": "Wprowadź treść",
+          "imageDesc": "Wyświetlane jest tylko 100 najnowszych miniatur. Jeśli nie możesz znaleźć żądanej miniatury, przejrzyj wcześniejsze obiekty w sekcji Eksploruj i skonfiguruj wyzwalacz z menu w tym miejscu.",
+          "textDesc": "Wprowadź tekst, który spowoduje uruchomienie tej akcji po wykryciu podobnego opisu śledzonego obiektu.",
+          "error": {
+            "required": "Zawartość jest wymagana."
+          }
+        },
+        "threshold": {
+          "title": "Próg",
+          "error": {
+            "min": "Próg musi wynosić co najmniej 0",
+            "max": "Próg nie może być większy niż 1"
+          },
+          "desc": "Ustaw próg podobieństwa dla tego wyzwalacza. Wyższy próg oznacza, że do uruchomienia wyzwalacza wymagane jest większe dopasowanie."
+        },
+        "actions": {
+          "title": "Akcje",
+          "desc": "Domyślnie Frigate wysyła komunikat MQTT dla wszystkich wyzwalaczy. Podetykiety dodają nazwę wyzwalacza do etykiety obiektu. Atrybuty to metadane, które można przeszukiwać, przechowywane oddzielnie w metadanych śledzonego obiektu.",
+          "error": {
+            "min": "Musisz wybrać co najmniej jedną akcję."
+          }
+        },
+        "friendly_name": {
+          "title": "Przyjazna nazwa",
+          "placeholder": "Nazwij lub opisz ten trigger",
+          "description": "Opcjonalna przyjazna nazwa lub opis tego triggera."
+        }
+      }
+    },
+    "toast": {
+      "success": {
+        "createTrigger": "Utworzono wyzwalacz {{name}}.",
+        "updateTrigger": "Zaktualizowano wyzwalacz {{name}}.",
+        "deleteTrigger": "Usunięto wyzwalacz {{name}}."
+      },
+      "error": {
+        "createTriggerFailed": "Nie udało się utworzyć wyzwalacza: {{errorMessage}}",
+        "updateTriggerFailed": "Nie udało się zaktualizować wyzwalacza: {{errorMessage}}",
+        "deleteTriggerFailed": "Nie udało się usunąć wyzwalacza: {{errorMessage}}"
+      }
+    },
+    "semanticSearch": {
+      "title": "Wyszukiwanie semantyczne jest zablokowane",
+      "desc": "Wyszukiwanie semantyczne musi być włączone, aby korzystać z triggerów."
+    },
+    "wizard": {
+      "title": "Utwórz wyzwalacz",
+      "step1": {
+        "description": "Skonfiguruj podstawowe ustawienia wyzwalacza."
+      },
+      "step2": {
+        "description": "Skonfiguruj treść, która uruchomi tę akcję."
+      },
+      "step3": {
+        "description": "Skonfiguruj próg i działania dla tego wyzwalacza."
+      },
+      "steps": {
+        "nameAndType": "Nazwa i typ",
+        "configureData": "Skonfiguruj dane",
+        "thresholdAndActions": "Próg i akcje"
+      }
+    }
+  },
+  "cameraWizard": {
+    "title": "Dodaj kamerę",
+    "steps": {
+      "streamConfiguration": "Konfiguracja strumienia",
+      "nameAndConnection": "Nazwa i połączenie",
+      "probeOrSnapshot": "Sonda lub migawka",
+      "validationAndTesting": "Walidacja i testowanie"
+    },
+    "save": {
+      "success": "Zapisano ustawienia nowej kamery {{cameraName}}.",
+      "failure": "Błąd zapisu {{cameraName}}."
+    },
+    "testResultLabels": {
+      "resolution": "Rozdzielczość",
+      "fps": "kl./s",
+      "video": "Wideo",
+      "audio": "Audio"
+    },
+    "commonErrors": {
+      "noUrl": "Podaj poprawny adres URL",
+      "testFailed": "Negatywny wynik testu strumienia: {{error}}"
+    },
+    "step1": {
+      "cameraName": "Nazwa kamery",
+      "cameraNamePlaceholder": "np. drzwi_frontowe lub Ogród",
+      "host": "Host/Adres IP",
+      "port": "Port",
+      "username": "Nazwa użytkownika",
+      "usernamePlaceholder": "Opcjonalne",
+      "password": "Hasło",
+      "passwordPlaceholder": "Opcjonalne",
+      "selectTransport": "Wybierz protokół warstwy transportowej",
+      "cameraBrand": "Marka Kamery",
+      "selectBrand": "Wybierz markę kamery aby dostosować wzór adresu URL",
+      "customUrl": "Niestandardowy adres URL strumienia",
+      "brandInformation": "Informacje o marce",
+      "brandUrlFormat": "Dla kamer z formatem RTSP, formatuj URL jako: {{exampleUrl}}",
+      "customUrlPlaceholder": "rtsp://nazwa_użytkownika:hasło@host:port/scieżka",
+      "connectionSettings": "Ustawienia Połączenia",
+      "detectionMethod": "Metoda wykrywania strumienia",
+      "onvifPort": "Port ONVIF",
+      "manualMode": "Ręczny wybór",
+      "onvifPortDescription": "Dla kamer wspierających protokół ONVIF, port to zazwyczaj 80 lub 8080.",
+      "errors": {
+        "brandOrCustomUrlRequired": "Wybierz markę kamery oraz host/adres IP lub wybierz 'Inny' i podaj niestandardowy adres URL",
+        "nameRequired": "Wymagana nazwa kamery",
+        "nameLength": "Nazwa kamery musi mieć 64 lub mniej znaków",
+        "invalidCharacters": "Nazwa kamery zawiera niepoprawne znaki",
+        "nameExists": "Nazwa kamery jest już zajęta",
+        "customUrlRtspRequired": "Niestandardowe adresy URL muszą zaczynać się od \"rtsp://\". Ręczna konfiguracja wymagana jest dla strumieniów innych niż RTSP."
+      },
+      "description": "Wprowadź szczegóły kamery i wybierz autodetekcję lub ręcznie wybierz firmę.",
+      "probeMode": "Wykryj kamerę",
+      "detectionMethodDescription": "Wykryj kamerę za pomocą ONVIF (jeśli wspierane) by znaleźć adresy strumieni lub wybierz ręcznie markę kamery by wybrać predefiniowane adresy. By wpisać własny adres strumienia RTSP użyj ręcznej metody i wybierz \"Inne\".",
+      "useDigestAuth": "Użyj przesyłania skrótu autentykacji",
+      "useDigestAuthDescription": "Użyj przesyłania skrótu logowania HTTP dla ONVIF. Niektóre kamery mogą wymagać dedykowanego użytkownika i hasła ONVIF zamiast standardowego konta admin."
+    },
+    "step2": {
+      "testSuccess": "Test połączenia udany!",
+      "testFailed": "Test połączenia nieudany. Sprawdź adres źródła obrazu i spróbuj ponownie.",
+      "testFailedTitle": "Test Nieudany",
+      "streamDetails": "Szczegóły Strumienia",
+      "testing": {
+        "fetchingSnapshot": "Przygotowywanie migawki kamery...",
+        "probingMetadata": "Wykrywanie metadanych kamery..."
+      },
+      "deviceInfo": "Informacje o urządzeniu",
+      "manufacturer": "Producent",
+      "model": "Model",
+      "firmware": "Firmware",
+      "profiles": "Profile",
+      "ptzSupport": "Wsparcie PTZ",
+      "autotrackingSupport": "Wsparcie auto-śledzenia",
+      "uriCopy": "Kopiuj",
+      "uriCopied": "Adres URL skopiowano do schowka",
+      "testConnection": "Przetestuj połączenie",
+      "errors": {
+        "hostRequired": "Wymagany jest Host/Adres IP"
+      },
+      "description": "Wykryj dostępne strumienie kamery lub skonfiguruj ręcznie ustawienia na podstawie wybranej metody detekcji.",
+      "probing": "Wykrywanie kamery...",
+      "retry": "Ponów",
+      "probeFailed": "Błąd wykrywania kamery: {{error}}",
+      "probingDevice": "Wykrywanie urządzenia...",
+      "probeSuccessful": "Wykrywanie udane",
+      "probeError": "Błąd wykrywania",
+      "probeNoSuccess": "Niepowodzenie wykrywania",
+      "presets": "Ustawienia wstępne",
+      "rtspCandidates": "Kandydaci RTSP",
+      "rtspCandidatesDescription": "W wyniku sprawdzania kamery znaleziono następujące adresy URL RTSP. Przetestuj połączenie, aby wyświetlić metadane strumienia.",
+      "noRtspCandidates": "Nie znaleziono adresów URL RTSP z kamery. Twoje dane uwierzytelniające mogą być nieprawidłowe lub kamera może nie obsługiwać protokołu ONVIF lub metody używanej do pobierania adresów URL RTSP. Wróć i wprowadź adres URL RTSP ręcznie.",
+      "candidateStreamTitle": "Kandydat {{number}}",
+      "useCandidate": "Użyj",
+      "toggleUriView": "Kliknij, aby przełączyć widok pełnego adresu URI",
+      "connected": "Połączony",
+      "notConnected": "Niepołączony"
+    },
+    "step3": {
+      "streamTitle": "Strumień numer: {{number}}",
+      "streamUrl": "URL strumienia",
+      "streamUrlPlaceholder": "rtsp://nazwa_użytkownika:hasło@host:port/scieżka",
+      "selectStream": "Wybierz strumień",
+      "noStreamFound": "Nie znaleziono żadnego strumienia",
+      "url": "adres URL",
+      "resolution": "Rozdzielczość",
+      "selectResolution": "Wybierz rozdzielczość",
+      "quality": "Jakość",
+      "selectQuality": "wybierz jakość",
+      "roles": "Role",
+      "roleLabels": {
+        "detect": "Wykrywanie obiektów",
+        "record": "Nagrywanie",
+        "audio": "Dźwięk"
+      },
+      "testStream": "Przetestuj połączenie",
+      "testSuccess": "Test strumienia udany!",
+      "testFailed": "Test strumienia nieudany",
+      "testFailedTitle": "Test nieudany",
+      "connected": "Połączono",
+      "notConnected": "Nie połączono",
+      "featuresTitle": "Funkcje",
+      "go2rtc": "Ogranicz połączenia do kamery",
+      "detectRoleWarning": "Przynajmniej jeden strumień musi mieć rolę \"detect\".",
+      "rolesPopover": {
+        "title": "Role strumienia",
+        "detect": "Główny strumień służący do wykrywania obiektów.",
+        "record": "Zapisuje fragmenty strumienia wideo zgodnie z ustawieniami konfiguracyjnymi.",
+        "audio": "Kanał do wykrywania opartego na dźwięku."
+      },
+      "featuresPopover": {
+        "title": "Funkcje strumienia",
+        "description": "Użyj funkcji ponownego przesyłania strumienia go2rtc, aby zmniejszyć liczbę połączeń z kamerą."
+      },
+      "description": "Skonfiguruj role strumieni i dodaj dodatkowe strumienie dla swojej kamery.",
+      "streamsTitle": "Strumienie kamery",
+      "addStream": "Dodaj strumień",
+      "addAnotherStream": "Dodaj kolejny strumień",
+      "searchCandidates": "Szukaj kandydatów..."
+    },
+    "step4": {
+      "description": "Końcowa walidacja i analiza przed zapisaniem ustawień nowej kamery. Połącz się z każdym strumieniem przed zapisaniem.",
+      "validationTitle": "Walidacja strumienia",
+      "reconnectionSuccess": "Ponowna próba połączenia udana.",
+      "streamUnavailable": "Podgląd strumienia niedostępny",
+      "connecting": "Łączenie...",
+      "streamTitle": "Strumień numer: {{number}}",
+      "valid": "Poprawny",
+      "connectingStream": "Łączenie",
+      "disconnectStream": "Rozłącz",
+      "estimatedBandwidth": "Przewidywana przepustowość",
+      "roles": "Role",
+      "ffmpegModuleDescription": "Jeżeli po kilku próbach strumień nadal nie ładuje się, uruchom ten tryb. Gdy włączony jest ten tryb Frigate będzie używać modułu ffmpeg z go2rtc. Może to zapewnić lepszą kompatybilność z niektórymi typami strumieniów.",
+      "none": "Brak",
+      "error": "Błąd",
+      "streamValidated": "Strumień numer: {{number}} przeszedł test pozytywnie",
+      "streamValidationFailed": "Strumień numer: {{number}} test nieudany",
+      "saveAndApply": "Zapisz nową kamerę",
+      "saveError": "Nieprawidłowa konfiguracja. Sprawdź ustawienia.",
+      "issues": {
+        "title": "Walidacja strumienia",
+        "audioCodecGood": "Kodek dźwięku to {{codec}}.",
+        "resolutionHigh": "Rozdzielczość {{resolution}} może spowodować większe zużycie zasobów.",
+        "resolutionLow": "Rozdzielczość {{resolution}} może okazać się za mała aby poprawnie wykrywać małe obiekty.",
+        "noAudioWarning": "Nie wykryto dźwięku dla tego strumienia, nagrania również nie będą zawierać dźwięku.",
+        "audioCodecRecordError": "Kodek AAC jest wymagany aby uwzględnić dźwięk w nagraniach.",
+        "audioCodecRequired": "Strumień audio jest wymagany aby umożliwić wykrywanie dźwięku.",
+        "restreamingWarning": "Ograniczenie ilości połączeń do strumienia nagrań może delikatnie zwiększyć użycie procesora.",
+        "brands": {
+          "reolink-rtsp": "Strumień RTSP dla kamer firmy Reolink nie jest rekomendowany. Uruchom strumień HTTP w oprogramowaniu kamery i uruchom kreator jeszcze raz.",
+          "reolink-http": "Strumienie HTTP Reolink powinny korzystać z FFmpeg w celu zapewnienia lepszej kompatybilności. Włącz opcję 'Użyj trybu kompatybilności strumienia' dla tego strumienia."
+        },
+        "videoCodecGood": "Kodek wideo to {{codec}}.",
+        "dahua": {
+          "substreamWarning": "Podstrumień 1 jest zablokowany na niskiej rozdzielczości. Wiele kamer Dahua / Amcrest / EmpireTech obsługuje dodatkowe podstrumienie, które należy włączyć w ustawieniach kamery. Zaleca się sprawdzenie i wykorzystanie tych strumieni, jeśli są dostępne."
+        },
+        "hikvision": {
+          "substreamWarning": "Podstrumień 1 jest zablokowany na niskiej rozdzielczości. Wiele kamer Hikvision obsługuje dodatkowe podstrumienie, które należy włączyć w ustawieniach kamery. Zaleca się sprawdzenie i wykorzystanie tych strumieni, jeśli są dostępne."
+        }
+      },
+      "connectAllStreams": "Podłącz wszystkie strumienie",
+      "reconnectionPartial": "Niektóre strumienie nie zostały ponownie połączone.",
+      "reload": "Przeładuj",
+      "failed": "Nie powiodło się",
+      "notTested": "Nietestowane",
+      "connectStream": "Połącz",
+      "ffmpegModule": "Użyj trybu zgodności strumienia"
+    },
+    "description": "Wykonaj poniższe kroki aby dodać nową kamerę do Frigate."
+  },
+  "cameraManagement": {
+    "title": "Zarządzaj kamerami",
+    "addCamera": "Dodaj nową kamerę",
+    "editCamera": "Edytuj kamerę:",
+    "selectCamera": "Wybierz kamerę",
+    "backToSettings": "Powrót do ustawień kamery",
+    "streams": {
+      "title": "Włącz / Wyłącz kamery",
+      "desc": "Tymczasowo wyłącz kamerę do momentu ponownego uruchomienia Frigate. Wyłączenie kamery całkowicie zatrzymuje przetwarzanie strumieni z tej kamery przez program Frigate. Funkcje detekcji, nagrywania i debugowania będą niedostępne. <br /><em>Uwaga: nie powoduje to wyłączenia strumieni go2rtc.</em>"
+    },
+    "cameraConfig": {
+      "add": "Dodaj kamerę",
+      "edit": "Edytuj kamerę",
+      "description": "Skonfiguruj ustawienia kamery, wliczając strumienie wejściowe i ich role.",
+      "name": "Nazwa kamery",
+      "nameRequired": "Wymagana nazwa kamery",
+      "nameLength": "Nazwa kamery musi mieć 64 lub mniej znaków.",
+      "namePlaceholder": "np. drzwi_frontowe lub Ogród",
+      "enabled": "Włączone",
+      "ffmpeg": {
+        "inputs": "Strumienie wejściowe",
+        "path": "Ścieżka strumienia",
+        "pathRequired": "Ścieżka strumienia jest wymagana",
+        "pathPlaceholder": "rtsp://...",
+        "roles": "Role",
+        "rolesRequired": "Wymagana jest przynajmniej jedna rola",
+        "rolesUnique": "Każda rola ('audio', 'detect', 'record') może zostać przypisana tylko raz",
+        "addInput": "Dodaj strumień wejściowy",
+        "removeInput": "Usuń strumień wejściowy",
+        "inputsRequired": "Wymagany jest przynajmniej jeden strumień wejściowy"
+      },
+      "go2rtcStreams": "Strumienie go2rtc",
+      "streamUrls": "Adresy URL strumieni",
+      "addUrl": "Dodaj adres URL",
+      "addGo2rtcStream": "Dodaj strumień go2rtc",
+      "toast": {
+        "success": "Zapisano poprawnie kamerę {{cameraName}}"
+      }
+    }
+  },
+  "cameraReview": {
+    "review": {
+      "alerts": "Alerty ",
+      "detections": "Wykrycia ",
+      "title": "Recenzja",
+      "desc": "Tymczasowo włącz/wyłącz alerty i wykrywania dla tej kamery do momentu ponownego uruchomienia programu Frigate. Po wyłączeniu nie będą generowane żadne nowe elementy do przeglądu. "
+    },
+    "reviewClassification": {
+      "title": "Przegląd klasyfikacji",
+      "noDefinedZones": "Nie zdefiniowano żadnych stref dla tej kamery.",
+      "objectDetectionsTips": "Wszystkie obiekty w kategorii {{detectionsLabels}} wykryte przez kamerę {{cameraName}} będą wyświetlane jako Wykrycia niezależnie od strefy w której zostały wykryte.",
+      "zoneObjectDetectionsTips": {
+        "text": "Wszystkie obiekty w kategorii {{detectionsLabels}} nieskategoryzowane w strefie {{zone}} kamery {{cameraName}} będą wyświetlane jako Wykrycia.",
+        "notSelectDetections": "Wszystkie obiekty w kategorii {{detectionsLabels}} wykryte w strefie {{zone}} kamery {{cameraName}} nieskategoryzowane jako Alerty będą wyświetlane jako Wykrycia, niezależnie w której strefie zostaną wykryte.",
+        "regardlessOfZoneObjectDetectionsTips": "Wszystkie obiekty w kategorii {{detectionsLabels}} nieskategoryzowane dla kamery {{cameraName}} będą wyświetlane jako Wykrycia niezależnie w której strefie zostaną wykryte."
+      },
+      "unsavedChanges": "Niezapisane ustawienia klasyfikacji przeglądu dla kamery {{camera}}",
+      "selectAlertsZones": "Wybierz strefę dla Alertów",
+      "selectDetectionsZones": "Wybierz strefę dla Wykryć",
+      "limitDetections": "Ogranicz detekcje do konkretnych stref",
+      "desc": "Frigate dzieli elementy do przeglądu na alarmy i detekcje. Domyślnie wszystkie obiekty typu <em>osoba</em> i <em>samochód</em> są traktowane jako alerty. Możesz doprecyzować kategoryzację elementów do przeglądu, konfigurując dla nich wymagane strefy.",
+      "objectAlertsTips": "Wszystkie obiekty {{alertsLabels}} w {{cameraName}} będą wyświetlane jako alarmy.",
+      "zoneObjectAlertsTips": "Wszystkie obiekty {{alertsLabels}} wykryte w {{zone}} na {{cameraName}} zostaną wyświetlone jako alarmy.",
+      "toast": {
+        "success": "Konfiguracja klasyfikacji została zapisana. Uruchom ponownie program Frigate, aby zastosować zmiany."
+      }
+    },
+    "title": "Ustawienia przeglądu kamery",
+    "object_descriptions": {
+      "title": "Generatywne opisy obiektów AI",
+      "desc": "Tymczasowo włącz/wyłącz generatywne opisy obiektów AI dla tej kamery. Po wyłączeniu funkcja nie będzie generować opisów AI dla obiektów śledzonych przez tę kamerę."
+    },
+    "review_descriptions": {
+      "title": "Opisy generatywnej sztucznej inteligencji",
+      "desc": "Tymczasowo włącz/wyłącz generatywne opisy AI dla tej kamery. Po wyłączeniu opisy generowane przez AI nie będą wymagane dla elementów przeglądu w tej kamerze."
     }
   }
 }

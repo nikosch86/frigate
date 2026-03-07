@@ -78,7 +78,11 @@
     "formattedTimestampMonthDayYear": {
       "24hour": "MMM d, yyyy",
       "12hour": "MMM d, yyyy"
-    }
+    },
+    "inProgress": "У процесі",
+    "invalidStartTime": "Недійсний час початку",
+    "invalidEndTime": "Недійсний час завершення",
+    "never": "Ніколи"
   },
   "button": {
     "exitFullscreen": "Вийти з повноекранного режиму",
@@ -115,7 +119,8 @@
     "export": "Експортувати",
     "deleteNow": "Видалити негайно",
     "next": "Наступне",
-    "unsuspended": "Відновити дію"
+    "unsuspended": "Відновити дію",
+    "continue": "Продовжити"
   },
   "menu": {
     "language": {
@@ -152,7 +157,15 @@
       "en": "Англійська",
       "yue": "粵語 (Кантонська)",
       "th": "ไทย (Тайська)",
-      "ca": "Català (Каталанська)"
+      "ca": "Català (Каталанська)",
+      "ptBR": "Português brasileiro (Бразильська португальська)",
+      "sr": "Српски (Сербська)",
+      "sl": "Slovenščina (Словенська)",
+      "lt": "Lietuvių (Литовська)",
+      "bg": "Български (Болгарська)",
+      "gl": "Galego (Галісійська)",
+      "id": "Bahasa Indonesia (Індонезійська)",
+      "ur": "اردو (Урду)"
     },
     "system": "Система",
     "systemMetrics": "Системна метріка",
@@ -178,7 +191,7 @@
     },
     "restart": "Перезапустити Frigate",
     "live": {
-      "title": "Живи",
+      "title": "Пряма трансляція",
       "allCameras": "Всi камери",
       "cameras": {
         "title": "Камери",
@@ -208,8 +221,9 @@
         "label": "Використовуйте налаштування системи для світлого або темного режиму"
       }
     },
-    "appearance": "Поява",
-    "withSystem": "Система"
+    "appearance": "Зовнішність",
+    "withSystem": "Система",
+    "classification": "Класифікація"
   },
   "unit": {
     "speed": {
@@ -219,10 +233,24 @@
     "length": {
       "feet": "ноги",
       "meters": "метрів"
+    },
+    "data": {
+      "kbps": "кБ/с",
+      "mbps": "МБ/с",
+      "gbps": "ГБ/с",
+      "kbph": "кБ/годину",
+      "mbph": "МБ/годину",
+      "gbph": "ГБ/годину"
     }
   },
   "label": {
-    "back": "Повернутись"
+    "back": "Повернутись",
+    "hide": "Приховати {{item}}",
+    "show": "Показати {{item}}",
+    "ID": "ID",
+    "none": "Жоден",
+    "all": "Усі",
+    "other": "Інше"
   },
   "toast": {
     "save": {
@@ -262,5 +290,18 @@
     "desc": "Сторінка не знайдена",
     "title": "404"
   },
-  "selectItem": "Вибрати {{item}}"
+  "selectItem": "Вибрати {{item}}",
+  "readTheDocumentation": "Прочитати документацію",
+  "information": {
+    "pixels": "{{area}}пикс"
+  },
+  "list": {
+    "two": "{{0}} і {{1}}",
+    "many": "{{items}}, і {{last}}",
+    "separatorWithSpace": ", "
+  },
+  "field": {
+    "optional": "Необов'язково",
+    "internalID": "Внутрішній ідентифікатор, який Frigate використовує в конфігурації та базі даних"
+  }
 }

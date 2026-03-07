@@ -9,10 +9,10 @@
     "filterInformation": "筛选信息",
     "filterActive": "筛选器已激活"
   },
-  "trackedObjectId": "跟踪对象 ID",
+  "trackedObjectId": "追踪目标 ID",
   "filter": {
     "label": {
-      "cameras": "摄像机",
+      "cameras": "摄像头",
       "labels": "标签",
       "zones": "区域",
       "sub_labels": "子标签",
@@ -26,7 +26,8 @@
       "max_speed": "最高速度",
       "recognized_license_plate": "识别的车牌",
       "has_clip": "包含片段",
-      "has_snapshot": "包含快照"
+      "has_snapshot": "包含快照",
+      "attributes": "属性"
     },
     "searchType": {
       "thumbnail": "缩略图",

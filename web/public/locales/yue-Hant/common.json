@@ -66,7 +66,11 @@
     "formattedTimestampMonthDayYear": {
       "24hour": "yy年MM月dd日",
       "12hour": "yy年MM月dd日"
-    }
+    },
+    "never": "從不",
+    "inProgress": "進行中",
+    "invalidStartTime": "開始時間無效",
+    "invalidEndTime": "結束時間無效"
   },
   "unit": {
     "speed": {
@@ -76,10 +80,24 @@
     "length": {
       "feet": "呎",
       "meters": "米"
+    },
+    "data": {
+      "kbps": "kB/秒",
+      "mbps": "MB/秒",
+      "gbps": "GB/秒",
+      "kbph": "kB/小時",
+      "mbph": "MB/小時",
+      "gbph": "GB/小時"
     }
   },
   "label": {
-    "back": "返回"
+    "back": "返回",
+    "hide": "隱藏 {{item}}",
+    "show": "顯示 {{item}}",
+    "ID": "編號",
+    "none": "無",
+    "all": "全部",
+    "other": "其他"
   },
   "button": {
     "apply": "套用",
@@ -116,7 +134,8 @@
     "info": "資訊",
     "download": "下載",
     "unsuspended": "取消暫停",
-    "unselect": "取消選取"
+    "unselect": "取消選取",
+    "continue": "繼續"
   },
   "menu": {
     "system": "系統",
@@ -160,7 +179,16 @@
       "he": "עברית (希伯來文)",
       "yue": "粵語 (廣東話)",
       "th": "ไทย (泰文)",
-      "ca": "Català (加泰羅尼亞語)"
+      "ca": "Català (加泰羅尼亞語)",
+      "ptBR": "Português brasileiro (巴西葡萄牙文)",
+      "sr": "Српски (塞爾維亞文)",
+      "sl": "Slovenščina (斯洛文尼亞文)",
+      "lt": "Lietuvių (立陶宛文)",
+      "bg": "Български (保加利亞文)",
+      "gl": "Galego (加利西亞文)",
+      "id": "Bahasa Indonesia (印尼文)",
+      "ur": "اردو (烏爾都文)",
+      "hr": "Hrvatski (克羅地亞語)"
     },
     "appearance": "外觀",
     "darkMode": {
@@ -208,7 +236,8 @@
       "anonymous": "匿名",
       "setPassword": "設定密碼"
     },
-    "help": "幫助"
+    "help": "幫助",
+    "classification": "分類"
   },
   "role": {
     "admin": "管理員",
@@ -248,5 +277,18 @@
     "documentTitle": "找不到頁面 - Frigate",
     "desc": "找不到頁面",
     "title": "404"
+  },
+  "readTheDocumentation": "閱讀文件",
+  "information": {
+    "pixels": "{{area}}像素"
+  },
+  "list": {
+    "two": "{{0}} 和 {{1}}",
+    "many": "{{items}}, 和 {{last}}",
+    "separatorWithSpace": "， "
+  },
+  "field": {
+    "optional": "選填",
+    "internalID": "Frigate 在設定及資料庫中使用的內部編號"
   }
 }

@@ -42,6 +42,7 @@
       "inferenceSpeed": "Detector Inference Speed",
       "temperature": "Detector Temperature",
       "cpuUsage": "Detector CPU Usage",
+      "cpuUsageInformation": "CPU used in preparing input and output data to/from detection models. This value does not measure inference usage, even if using a GPU or accelerator.",
       "memoryUsage": "Detector Memory Usage"
     },
     "hardwareInfo": {
@@ -75,12 +76,24 @@
         }
       },
       "npuUsage": "NPU Usage",
-      "npuMemory": "NPU Memory"
+      "npuMemory": "NPU Memory",
+      "intelGpuWarning": {
+        "title": "Intel GPU Stats Warning",
+        "message": "GPU stats unavailable",
+        "description": "This is a known bug in Intel's GPU stats reporting tools (intel_gpu_top) where it will break and repeatedly return a GPU usage of 0% even in cases where hardware acceleration and object detection are correctly running on the (i)GPU. This is not a Frigate bug. You can restart the host to temporarily fix the issue and confirm that the GPU is working correctly. This does not affect performance."
+      }
     },
     "otherProcesses": {
       "title": "Other Processes",
       "processCpuUsage": "Process CPU Usage",
-      "processMemoryUsage": "Process Memory Usage"
+      "processMemoryUsage": "Process Memory Usage",
+      "series": {
+        "go2rtc": "go2rtc",
+        "recording": "recording",
+        "review_segment": "review segment",
+        "embeddings": "embeddings",
+        "audio_detector": "audio detector"
+      }
     }
   },
   "storage": {
@@ -90,6 +103,10 @@
       "title": "Recordings",
       "tips": "This value represents the total storage used by the recordings in Frigate's database. Frigate does not track storage usage for all files on your disk.",
       "earliestRecording": "Earliest recording available:"
+    },
+    "shm": {
+      "title": "SHM (shared memory) allocation",
+      "warning": "The current SHM size of {{total}}MB is too small. Increase it to at least {{min_shm}}MB."
     },
     "cameraStorage": {
       "title": "Camera Storage",
@@ -158,11 +175,13 @@
     "reindexingEmbeddings": "Reindexing embeddings ({{processed}}% complete)",
     "cameraIsOffline": "{{camera}} is offline",
     "detectIsSlow": "{{detect}} is slow ({{speed}} ms)",
-    "detectIsVerySlow": "{{detect}} is very slow ({{speed}} ms)"
+    "detectIsVerySlow": "{{detect}} is very slow ({{speed}} ms)",
+    "shmTooLow": "/dev/shm allocation ({{total}} MB) should be increased to at least {{min}} MB."
   },
   "enrichments": {
     "title": "Enrichments",
     "infPerSecond": "Inferences Per Second",
+    "averageInf": "Average Inference Time",
     "embeddings": {
       "image_embedding": "Image Embedding",
       "text_embedding": "Text Embedding",
@@ -174,7 +193,16 @@
       "plate_recognition_speed": "Plate Recognition Speed",
       "text_embedding_speed": "Text Embedding Speed",
       "yolov9_plate_detection_speed": "YOLOv9 Plate Detection Speed",
-      "yolov9_plate_detection": "YOLOv9 Plate Detection"
+      "yolov9_plate_detection": "YOLOv9 Plate Detection",
+      "review_description": "Review Description",
+      "review_description_speed": "Review Description Speed",
+      "review_description_events_per_second": "Review Description",
+      "object_description": "Object Description",
+      "object_description_speed": "Object Description Speed",
+      "object_description_events_per_second": "Object Description",
+      "classification": "{{name}} Classification",
+      "classification_speed": "{{name}} Classification Speed",
+      "classification_events_per_second": "{{name}} Classification Events Per Second"
     }
   }
 }

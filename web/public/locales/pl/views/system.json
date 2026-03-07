@@ -42,7 +42,12 @@
       "gpuMemory": "Pamięć GPU",
       "gpuUsage": "Użycie GPU",
       "npuUsage": "Użycie NPU",
-      "npuMemory": "Pamięć NPU"
+      "npuMemory": "Pamięć NPU",
+      "intelGpuWarning": {
+        "message": "Statystyki układu graficznego niedostępne",
+        "description": "W narzędziach telemetrii i statystyki układów graficznych firmy Intel (intel_gpu_top) znajduje się znany błąd powodujący raportowanie użycia układu graficznego wynoszące 0%, nawet gdy akceleracja sprzętowa i wykrywanie obiektów działa prawidłowo korzystając ze zintegrowanego układu graficznego. To nie jest błąd oprogramowania Frigate. Restart hosta może chwilowo rozwiązać problem i pozwolić na weryfikację działania układu graficznego. Ten bład nie wpływa na wydajność systemu.",
+        "title": "Ostrzeżenie dotyczące statystyk Intel GPU"
+      }
     },
     "title": "Ogólne",
     "detector": {
@@ -50,18 +55,26 @@
       "inferenceSpeed": "Szybkość wnioskowania detektora",
       "cpuUsage": "Użycie CPU przez detektor",
       "memoryUsage": "Użycie pamięci przez detektor",
-      "temperature": "Temperatura detektora"
+      "temperature": "Temperatura detektora",
+      "cpuUsageInformation": "Procesor został użyty w przygotowaniu wejścia i obsłudze danych do i z modeli wykrywających. Ta wartość nie mierzy czasu wnioskowania, nawet jeśli został użyty akcelerator lub GPU."
     },
     "otherProcesses": {
       "title": "Inne procesy",
       "processCpuUsage": "Użycie CPU przez proces",
-      "processMemoryUsage": "Użycie pamięci przez proces"
+      "processMemoryUsage": "Użycie pamięci przez proces",
+      "series": {
+        "audio_detector": "detektor dźwięku",
+        "go2rtc": "go2rtc",
+        "recording": "nagranie",
+        "review_segment": "przejrzyj fragment",
+        "embeddings": "osadzone opisy"
+      }
     }
   },
   "cameras": {
     "info": {
       "stream": "Strumień {{idx}}",
-      "cameraProbeInfo": "{{camera}} Informacje o sondowaniu kamery",
+      "cameraProbeInfo": "{{camera}} Informacje o ustawieniach kamery",
       "streamDataFromFFPROBE": "Dane strumienia są pozyskiwane za pomocą <code>ffprobe</code>.",
       "video": "Wideo:",
       "codec": "Kodek:",
@@ -112,17 +125,21 @@
       },
       "title": "Magazyn kamery",
       "camera": "Kamera",
-      "storageUsed": "Wykorzystany magazyn",
+      "storageUsed": "Wykorzystana przestrzeń",
       "percentageOfTotalUsed": "Procent całości",
       "bandwidth": "Przepustowość",
       "unusedStorageInformation": "Informacja o niewykorzystanym magazynie"
     },
-    "title": "Magazyn",
+    "title": "Przestrzeń dyskowa",
     "overview": "Przegląd",
     "recordings": {
       "title": "Nagrania",
       "tips": "Ta wartość reprezentuje całkowite miejsce zajmowane przez nagrania w bazie danych Frigate. Frigate nie śledzi wykorzystania magazynu dla wszystkich plików na twoim dysku.",
       "earliestRecording": "Najwcześniejsze dostępne nagranie:"
+    },
+    "shm": {
+      "title": "Wykorzystanie pamięci współdzielonej SHM",
+      "warning": "Obecny rozmiar pamięci współdzielonej SHM {{total}}MB jest za mały. Zwiększ shm_size do co najmniej {{min_shm}}MB."
     }
   },
   "logs": {
@@ -158,7 +175,8 @@
     "reindexingEmbeddings": "Ponowne indeksowanie osadzeń ({{processed}}% ukończone)",
     "detectIsSlow": "{{detect}} jest wolne ({{speed}} ms)",
     "detectIsVerySlow": "{{detect}} jest bardzo wolne ({{speed}} ms)",
-    "cameraIsOffline": "{{camera}} jest niedostępna"
+    "cameraIsOffline": "{{camera}} jest niedostępna",
+    "shmTooLow": "przydział {{total}} MB dla /dev/shm powinien zostać zwiększony do przynajmniej {{min}} MB."
   },
   "enrichments": {
     "title": "Wzbogacenia",
@@ -174,7 +192,17 @@
       "yolov9_plate_detection_speed": "Prędkość detekcji rejestracji samochodowych YOLOv9",
       "yolov9_plate_detection": "Detekcja rejestracji samochodowych YOLOv9",
       "text_embedding": "Osadzenie tekstu",
-      "face_recognition": "Rozpoznawanie twarzy"
-    }
+      "face_recognition": "Rozpoznawanie twarzy",
+      "classification_events_per_second": "{{name}} Klasyfikacja zdarzeń na sekundę",
+      "classification_speed": "{{name}} Szybkość klasyfikacji",
+      "classification": "{{name}} Klasyfikacja",
+      "review_description": "Opis recenzji",
+      "review_description_speed": "Szybkość opisu recenzji",
+      "review_description_events_per_second": "Opis recenzji",
+      "object_description": "Opis obiektu",
+      "object_description_speed": "Szybkość opisu obiektu",
+      "object_description_events_per_second": "Opis obiektu"
+    },
+    "averageInf": "Średni czas wnioskowania"
   }
 }

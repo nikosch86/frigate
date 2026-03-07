@@ -56,7 +56,8 @@
         "noVaildTimeSelected": "Chưa chọn khoảng thời gian hợp lệ",
         "failed": "Không thể bắt đầu xuất: {{error}}"
       },
-      "success": "Đã bắt đầu xuất thành công. Xem tệp trong thư mục /exports."
+      "success": "Đã bắt đầu xuất dữ liệu thành công. Xem tệp trên trang xuất dữ liệu.",
+      "view": "Xem"
     },
     "fromTimeline": {
       "saveExport": "Lưu bản xuất",
@@ -92,7 +93,8 @@
     "button": {
       "deleteNow": "Xóa ngay",
       "export": "Xuất",
-      "markAsReviewed": "Đánh dấu là đã xem xét"
+      "markAsReviewed": "Đánh dấu là đã xem xét",
+      "markAsUnreviewed": "Đánh dấu là chưa xem xét"
     }
   },
   "search": {
@@ -108,5 +110,13 @@
       "placeholder": "Nhập tên cho tìm kiếm của bạn",
       "overwrite": "{{searchName}} đã tồn tại. Lưu sẽ ghi đè lên giá trị hiện có."
     }
+  },
+  "imagePicker": {
+    "selectImage": "Chọn hình thu nhỏ của đối tượng cần theo dõi",
+    "search": {
+      "placeholder": "Tìm theo nhãn hoặc nhãn phụ..."
+    },
+    "noImages": "Không tìm thấy hình thu nhỏ cho camera này",
+    "unknownLabel": "Ảnh kích hoạt đã lưu"
   }
 }

@@ -47,6 +47,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { useDateLocale } from "@/hooks/use-date-locale";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { CameraNameLabel } from "../camera/FriendlyNameLabel";
+import { LiveStreamMetadata } from "@/types/live";
 
 type LiveContextMenuProps = {
   className?: string;
@@ -67,6 +69,7 @@ type LiveContextMenuProps = {
   resetPreferredLiveMode: () => void;
   config?: FrigateConfig;
   children?: ReactNode;
+  streamMetadata?: { [key: string]: LiveStreamMetadata };
 };
 export default function LiveContextMenu({
   className,
@@ -87,6 +90,7 @@ export default function LiveContextMenu({
   resetPreferredLiveMode,
   config,
   children,
+  streamMetadata,
 }: LiveContextMenuProps) {
   const { t } = useTranslation("views/live");
   const [showSettings, setShowSettings] = useState(false);
@@ -271,7 +275,7 @@ export default function LiveContextMenu({
         <ContextMenuContent>
           <div className="flex flex-col items-start gap-1 py-1 pl-2">
             <div className="text-md text-primary-variant smart-capitalize">
-              {camera.replaceAll("_", " ")}
+              <CameraNameLabel camera={camera} />
             </div>
             {preferredLiveMode == "jsmpeg" && isRestreamed && (
               <div className="flex flex-row items-center gap-1">
@@ -354,9 +358,7 @@ export default function LiveContextMenu({
             <div
               className="flex w-full cursor-pointer items-center justify-start gap-2"
               onClick={
-                isEnabled
-                  ? () => navigate(`/settings?page=debug&camera=${camera}`)
-                  : undefined
+                isEnabled ? () => navigate(`?debug=true#${camera}`) : undefined
               }
             >
               <div className="text-primary">
@@ -559,6 +561,7 @@ export default function LiveContextMenu({
           setGroupStreamingSettings={setGroupStreamingSettings}
           setIsDialogOpen={setShowSettings}
           onSave={onSave}
+          streamMetadata={streamMetadata}
         />
       </Dialog>
     </div>

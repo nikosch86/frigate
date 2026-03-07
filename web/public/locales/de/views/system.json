@@ -16,7 +16,7 @@
           "vbios": "VBios Info: {{vbios}}"
         },
         "closeInfo": {
-          "label": "Schhließe GPU Info"
+          "label": "Schließe GPU Info"
         },
         "copyInfo": {
           "label": "Kopiere GPU Info"
@@ -31,7 +31,12 @@
       "gpuDecoder": "GPU Decoder",
       "gpuEncoder": "GPU Encoder",
       "npuUsage": "NPU Verwendung",
-      "npuMemory": "NPU Speicher"
+      "npuMemory": "NPU Speicher",
+      "intelGpuWarning": {
+        "title": "Intel GPU Statistik Warnung",
+        "message": "GPU stats nicht verfügbar",
+        "description": "Dies ist ein bekannter Fehler in den GPU-Statistik-Tools von Intel (intel_gpu_top), bei dem das Tool ausfällt und wiederholt eine GPU-Auslastung von 0 % anzeigt, selbst wenn die Hardwarebeschleunigung und die Objekterkennung auf der (i)GPU korrekt funktionieren. Dies ist kein Fehler von Frigate. Du kannst den Host neu starten, um das Problem vorübergehend zu beheben und zu prüfen, ob die GPU korrekt funktioniert. Dies hat keine Auswirkungen auf die Leistung."
+      }
     },
     "title": "Allgemein",
     "detector": {
@@ -39,12 +44,20 @@
       "cpuUsage": "CPU-Auslastung des Detektors",
       "memoryUsage": "Arbeitsspeichernutzung des Detektors",
       "inferenceSpeed": "Detektoren Inferenzgeschwindigkeit",
-      "temperature": "Temperatur des Detektors"
+      "temperature": "Temperatur des Detektors",
+      "cpuUsageInformation": "CPU, die zur Vorbereitung von Eingabe- und Ausgabedaten für/aus Erkennungsmodellen verwendet wird. Dieser Wert misst nicht die Inferenzauslastung, selbst wenn eine GPU oder ein Beschleuniger verwendet wird."
     },
     "otherProcesses": {
       "title": "Andere Prozesse",
       "processCpuUsage": "CPU Auslastung für Prozess",
-      "processMemoryUsage": "Prozessspeicherauslastung"
+      "processMemoryUsage": "Prozessspeicherauslastung",
+      "series": {
+        "go2rtc": "go2rtc",
+        "recording": "Aufnahme",
+        "audio_detector": "Geräuscherkennung",
+        "review_segment": "Überprüfungsteil",
+        "embeddings": "Einbettungen"
+      }
     }
   },
   "documentTitle": {
@@ -102,7 +115,11 @@
       "bandwidth": "Bandbreite"
     },
     "title": "Speicher",
-    "overview": "Übersicht"
+    "overview": "Übersicht",
+    "shm": {
+      "title": "SHM (Shared Memory) Zuweisung",
+      "warning": "Die aktuelle SHM-Größe von {{total}} MB ist zu klein. Erhöhe sie auf mindestens {{min_shm}} MB."
+    }
   },
   "cameras": {
     "info": {
@@ -115,7 +132,7 @@
       "unknown": "Unbekannt",
       "audio": "Audio:",
       "error": "Fehler: {{error}}",
-      "cameraProbeInfo": "{{camera}} Kamera-Untersuchsungsinfo",
+      "cameraProbeInfo": "{{camera}} Kamera-Untersuchungsinfo",
       "streamDataFromFFPROBE": "Stream-Daten werden mit <code>ffprobe</code> erhalten.",
       "tips": {
         "title": "Kamera-Untersuchsungsinfo"
@@ -162,10 +179,20 @@
       "face_recognition": "Gesichts Erkennung",
       "image_embedding": "Bild Embedding",
       "yolov9_plate_detection_speed": "YOLOv9 Kennzeichenerkennungsgeschwindigkeit",
-      "yolov9_plate_detection": "YOLOv9 Kennzeichenerkennung"
+      "yolov9_plate_detection": "YOLOv9 Kennzeichenerkennung",
+      "review_description": "Bewertung Beschreibung",
+      "review_description_speed": "Bewertungsbeschreibung Geschwindigkeit",
+      "review_description_events_per_second": "Bewertungsbeschreibung",
+      "object_description": "Objekt Beschreibung",
+      "object_description_speed": "Objektbeschreibung Geschwindigkeit",
+      "object_description_events_per_second": "Objektbeschreibung",
+      "classification": "{{name}} Klassifizierung",
+      "classification_speed": "{{name}} Klassifizierungsgeschwindigkeit",
+      "classification_events_per_second": "{{name}} Klassifizierungsereignisse pro Sekunde"
     },
     "title": "Optimierungen",
-    "infPerSecond": "Rückschlüsse pro Sekunde"
+    "infPerSecond": "Rückschlüsse pro Sekunde",
+    "averageInf": "Durchschnittliche Inferenzzeit"
   },
   "stats": {
     "healthy": "Das System läuft problemlos",
@@ -174,7 +201,8 @@
     "reindexingEmbeddings": "Neuindizierung von Einbettungen ({{processed}}% erledigt)",
     "detectIsSlow": "{{detect}} ist langsam ({{speed}} ms)",
     "detectIsVerySlow": "{{detect}} ist sehr langsam ({{speed}} ms)",
-    "cameraIsOffline": "{{camera}} ist offline"
+    "cameraIsOffline": "{{camera}} ist offline",
+    "shmTooLow": "Die Zuweisung für /dev/shm ({{total}} MB) sollte auf mindestens {{min}} MB erhöht werden."
   },
   "lastRefreshed": "Zuletzt aktualisiert: "
 }

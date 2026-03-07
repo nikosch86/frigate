@@ -40,7 +40,16 @@
       "sk": "Slovenčina (Eslovac)",
       "ru": "Русский (Rus)",
       "th": "ไทย (Tailandès)",
-      "ca": "Català (Catalan)"
+      "ca": "Català (Catalan)",
+      "ptBR": "Português brasileiro (Portuguès Brasiler)",
+      "sr": "Српски (Serbi)",
+      "sl": "Slovenščina (Sloveni)",
+      "lt": "Lietuvių (Lituà)",
+      "bg": "Български (Búlgar)",
+      "gl": "Galego (Gallec)",
+      "id": "Bahasa Indonesia (Indonesi)",
+      "ur": "اردو (Urdú)",
+      "hr": "Hrvatski (croat)"
     },
     "system": "Sistema",
     "systemMetrics": "Mètriques del sistema",
@@ -96,7 +105,8 @@
       "anonymous": "Anònim",
       "logout": "Tanca la sessió",
       "current": "Usuari actual: {{user}}"
-    }
+    },
+    "classification": "Classificació"
   },
   "pagination": {
     "previous": {
@@ -189,7 +199,11 @@
     "formattedTimestampMonthDayYearHourMinute": {
       "12hour": "MMM d yyyy, h:mm aaa",
       "24hour": "MMM d yyyy, HH:mm"
-    }
+    },
+    "inProgress": "En curs",
+    "invalidStartTime": "Hora d'inici no vàlida",
+    "invalidEndTime": "Hora de finalització no vàlida",
+    "never": "Mai"
   },
   "unit": {
     "speed": {
@@ -199,10 +213,24 @@
     "length": {
       "feet": "peus",
       "meters": "metres"
+    },
+    "data": {
+      "kbps": "Kb/s",
+      "mbps": "Mb/s",
+      "gbps": "Gb/s",
+      "kbph": "kB/hora",
+      "mbph": "MB/hora",
+      "gbph": "GB/hora"
     }
   },
   "label": {
-    "back": "Torna enrere"
+    "back": "Torna enrere",
+    "hide": "Oculta {{item}}",
+    "show": "Mostra {{item}}",
+    "ID": "ID",
+    "none": "Cap",
+    "all": "Tots",
+    "other": "Altres"
   },
   "button": {
     "apply": "Aplicar",
@@ -239,7 +267,8 @@
     "off": "APAGAT",
     "unselect": "Desseleccionar",
     "enable": "Habilitar",
-    "enabled": "Habilitat"
+    "enabled": "Habilitat",
+    "continue": "Continua"
   },
   "toast": {
     "copyUrlToClipboard": "URL copiada al porta-retalls.",
@@ -261,5 +290,18 @@
     "title": "404",
     "desc": "Pàgina no trobada"
   },
-  "selectItem": "Selecciona {{item}}"
+  "selectItem": "Selecciona {{item}}",
+  "readTheDocumentation": "Llegir la documentació",
+  "information": {
+    "pixels": "{{area}}px"
+  },
+  "list": {
+    "two": "{{0}} i {{1}}",
+    "many": "{{items}}, i {{last}}",
+    "separatorWithSpace": ",· "
+  },
+  "field": {
+    "optional": "Opcional",
+    "internalID": "L'ID intern que Frigate s'utilitza a la configuració i a la base de dades"
+  }
 }

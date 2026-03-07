@@ -29,6 +29,9 @@
       "tips.documentation": "Đọc tài liệu ",
       "available": "Đàm thoại hai chiều khả dụng cho luồng này",
       "unavailable": "Đàm thoại hai chiều không khả dụng cho luồng này"
+    },
+    "debug": {
+      "picker": "Việc chọn luồng phát không khả dụng trong chế độ gỡ lỗi. Chế độ xem gỡ lỗi luôn sử dụng luồng được gán vai trò phát hiện (detect)."
     }
   },
   "editLayout": {
@@ -71,7 +74,15 @@
         "label": "Di chuyển camera PTZ sang phải"
       }
     },
-    "presets": "Các thiết lập sẵn cho camera PTZ"
+    "presets": "Các thiết lập sẵn cho camera PTZ",
+    "focus": {
+      "in": {
+        "label": "Lấy nét gần (camera PTZ)"
+      },
+      "out": {
+        "label": "Lấy nét xa (camera PTZ)"
+      }
+    }
   },
   "manualRecording": {
     "playInBackground": {
@@ -82,8 +93,8 @@
     "failedToStart": "Không thể bắt đầu ghi hình theo yêu cầu.",
     "started": "Đã bắt đầu ghi hình theo yêu cầu.",
     "ended": "Đã kết thúc ghi hình theo yêu cầu.",
-    "title": "Ghi hình theo yêu cầu",
-    "tips": "Bắt đầu sự kiện ghi hình thủ công dựa trên cài đặt lưu trữ của camera này.",
+    "title": "Theo yêu cầu",
+    "tips": "Tải xuống ảnh chụp nhanh tức thì hoặc bắt đầu sự kiện thủ công dựa trên cài đặt lưu giữ bản ghi của máy ảnh này.",
     "showStats": {
       "label": "Hiện thống kê",
       "desc": "Bật tùy chọn này để hiển thị thống kê luồng trên khung hình."
@@ -142,7 +153,8 @@
     "recording": "Ghi hình",
     "snapshots": "Ảnh chụp",
     "audioDetection": "Phát hiện âm thanh",
-    "autotracking": "Tự động theo dõi"
+    "autotracking": "Tự động theo dõi",
+    "transcription": "Phiên âm"
   },
   "history": {
     "label": "Hiện cảnh quay lịch sử"
@@ -154,5 +166,24 @@
       "active_objects": "Đối tượng hoạt động"
     },
     "notAllTips": "Cấu hình giữ lại ghi hình {{source}} của bạn được đặt là <code>mode: {{effectiveRetainMode}}</code>, vì vậy lần ghi hình theo yêu cầu này chỉ giữ lại các đoạn có {{effectiveRetainModeName}}."
+  },
+  "transcription": {
+    "enable": "Bật phiên âm trực tiếp",
+    "disable": "Tắt phiên âm trực tiếp"
+  },
+  "snapshot": {
+    "takeSnapshot": "Tải xuống ảnh chụp nhanh ngay lập tức",
+    "noVideoSource": "Không có nguồn video để chụp ảnh nhanh.",
+    "captureFailed": "Chụp ảnh nhanh không thành công.",
+    "downloadStarted": "Bắt đầu tải xuống ảnh chụp nhanh."
+  },
+  "noCameras": {
+    "title": "Không có camera nào được cấu hình",
+    "description": "Bắt đầu bằng cách kết nối một camera với Frigate.",
+    "buttonText": "Thêm Camera",
+    "restricted": {
+      "title": "Không có Camera nào khả dụng",
+      "description": "Bạn không có quyền xem bất kỳ camera nào trong nhóm này."
+    }
   }
 }

@@ -12,13 +12,13 @@
     "24hours": "24 Stunden",
     "month_one": "{{time}} Monat",
     "month_other": "{{time}} Monate",
-    "d": "{{time}} Tag",
+    "d": "{{time}} Tg.",
     "day_one": "{{time}} Tag",
     "day_other": "{{time}} Tage",
-    "m": "{{time}} Minute",
+    "m": "{{time}} Min",
     "minute_one": "{{time}} Minute",
     "minute_other": "{{time}} Minuten",
-    "s": "{{time}} Sekunde",
+    "s": "{{time}}s",
     "second_one": "{{time}} Sekunde",
     "second_other": "{{time}} Sekunden",
     "formattedTimestamp2": {
@@ -37,12 +37,12 @@
     "30minutes": "30 Minuten",
     "1hour": "1 Stunde",
     "lastWeek": "Letzte Woche",
-    "h": "{{time}} Stunde",
-    "ago": "{{timeAgo}} her",
+    "h": "{{time}} Std.",
+    "ago": "vor {{timeAgo}}",
     "untilRestart": "Bis zum Neustart",
     "justNow": "Gerade",
     "pm": "nachmittags",
-    "mo": "{{time}}Monat",
+    "mo": "{{time}} Mon.",
     "formattedTimestamp": {
       "12hour": "d. MMM, hh:mm:ss aaa",
       "24hour": "dd. MMM, hh:mm:ss aaa"
@@ -81,7 +81,11 @@
     "formattedTimestampMonthDayYear": {
       "12hour": "d. MMM yyyy",
       "24hour": "d. MMM yyyy"
-    }
+    },
+    "inProgress": "Im Gange",
+    "invalidStartTime": "Ungültige Startzeit",
+    "invalidEndTime": "Ungültige Endzeit",
+    "never": "Nie"
   },
   "button": {
     "save": "Speichern",
@@ -107,7 +111,7 @@
     "off": "AUS",
     "reset": "Zurücksetzen",
     "copy": "Kopieren",
-    "twoWayTalk": "bidirecktionales Gespräch",
+    "twoWayTalk": "Zwei-Wege-Kommunikation",
     "exitFullscreen": "Vollbild verlassen",
     "unselect": "Selektion aufheben",
     "copyCoordinates": "Kopiere Koordinaten",
@@ -118,10 +122,17 @@
     "pictureInPicture": "Bild in Bild",
     "on": "AN",
     "suspended": "Pausierte",
-    "unsuspended": "fortsetzen"
+    "unsuspended": "fortsetzen",
+    "continue": "Weiter"
   },
   "label": {
-    "back": "Zurück"
+    "back": "Zurück",
+    "hide": "Verstecke {{item}}",
+    "show": "Zeige {{item}}",
+    "ID": "ID",
+    "none": "Nichts",
+    "all": "Alle",
+    "other": "andere"
   },
   "menu": {
     "configurationEditor": "Konfigurationseditor",
@@ -160,7 +171,16 @@
       "sk": "Slowakisch",
       "yue": "粵語 (Kantonesisch)",
       "th": "ไทย (Thailändisch)",
-      "ca": "Català (Katalanisch)"
+      "ca": "Català (Katalanisch)",
+      "ur": "اردو (Urdu)",
+      "ptBR": "Portugiesisch (Brasilianisch)",
+      "sr": "Српски (Serbisch)",
+      "sl": "Slovenščina (Slowenisch)",
+      "lt": "Lietuvių (Litauisch)",
+      "bg": "Български (bulgarisch)",
+      "gl": "Galego (Galicisch)",
+      "id": "Bahasa Indonesia (Indonesisch)",
+      "hr": "Hrvatski (Kroatisch)"
     },
     "appearance": "Erscheinung",
     "theme": {
@@ -168,7 +188,7 @@
       "blue": "Blau",
       "green": "Grün",
       "default": "Standard",
-      "nord": "Norden",
+      "nord": "Nord",
       "red": "Rot",
       "contrast": "Hoher Kontrast",
       "highcontrast": "Hoher Kontrast"
@@ -214,7 +234,8 @@
       "logout": "Abmelden"
     },
     "uiPlayground": "Testgebiet für Benutzeroberfläche",
-    "export": "Exportieren"
+    "export": "Exportieren",
+    "classification": "Klassifizierung"
   },
   "unit": {
     "speed": {
@@ -224,10 +245,18 @@
     "length": {
       "feet": "Fuß",
       "meters": "Meter"
+    },
+    "data": {
+      "kbps": "kB/s",
+      "mbps": "MB/s",
+      "gbps": "GB/s",
+      "kbph": "kB/Stunde",
+      "mbph": "MB/Stunde",
+      "gbph": "GB/Stunde"
     }
   },
   "toast": {
-    "copyUrlToClipboard": "URL in zwischenablage kopiert.",
+    "copyUrlToClipboard": "URL in Zwischenablage kopiert.",
     "save": {
       "error": {
         "title": "Speichern der Konfigurationsänderungen gescheitert: {{errorMessage}}",
@@ -240,7 +269,7 @@
     "title": "Rolle",
     "admin": "Administrator",
     "viewer": "Zuschauer",
-    "desc": "Administratoren haben vollen Zugang zu allen funktionen der Frigate Benutzeroberfläche. Zuschauer können nur Kameras betrachten, erkannte Objekte überprüfen und historische Aufnahmen durchsehen."
+    "desc": "Administratoren haben vollen Zugang zu allen Funktionen der Frigate Benutzeroberfläche. Zuschauer können nur Kameras betrachten, erkannte Objekte überprüfen und historische Aufnahmen durchsehen."
   },
   "pagination": {
     "previous": {
@@ -260,9 +289,22 @@
     "documentTitle": "Nicht gefunden - Frigate"
   },
   "selectItem": "Wähle {{item}}",
+  "readTheDocumentation": "Dokumentation lesen",
   "accessDenied": {
     "desc": "Du hast keine Berechtigung diese Seite anzuzeigen.",
     "documentTitle": "Zugang verweigert - Frigate",
     "title": "Zugang verweigert"
+  },
+  "information": {
+    "pixels": "{{area}}px"
+  },
+  "field": {
+    "optional": "Optional",
+    "internalID": "Die interne ID, die Frigate in der Konfiguration und Datenbank verwendet"
+  },
+  "list": {
+    "two": "{{0}} und {{1}}",
+    "many": "{{items}}, und {{last}}",
+    "separatorWithSpace": ", "
   }
 }

@@ -1,12 +1,13 @@
 {
   "restart": {
-    "title": "Biztosan újra szeretnéd indítani a Frigate-ot?",
+    "title": "Biztosan újra szeretnéd indítani a Frigate-et?",
     "button": "Újraindítás",
     "restarting": {
       "title": "A Frigate újraindul",
-      "content": "Az oldal újrtölt {{countdown}} másodperc múlva.",
+      "content": "Az oldal újratölt {{countdown}} másodperc múlva.",
       "button": "Erőltetett újraindítás azonnal"
-    }
+    },
+    "description": "Ez rövid időre leállítja a Frigate programot, amíg újraindul."
   },
   "explore": {
     "plus": {
@@ -22,7 +23,7 @@
           "ask_a": "Ez a tárgy egy <code>{{label}}</code>?",
           "label": "Erősítse meg ezt a cimkét a Frigate plus felé",
           "ask_an": "Ez a tárgy egy <code>{{label}}</code>?",
-          "ask_full": "Ez a tárgy egy <code>{{untranslatedLabel}}</code> ({{translatedLabel}})?"
+          "ask_full": "Ez a tárgy egy {{translatedLabel}} (<code>{{untranslatedLabel}}</code>)?"
         }
       }
     },
@@ -57,7 +58,8 @@
         "failed": "Nem sikerült elkezdeni az exportálást: {{error}}",
         "endTimeMustAfterStartTime": "A végső időpontnak a kezdeti időpont után kell következnie",
         "noVaildTimeSelected": "Nincs érvényes idő intervallum kiválasztva"
-      }
+      },
+      "view": "Megtekint"
     },
     "fromTimeline": {
       "saveExport": "Exportálás mentése",
@@ -107,7 +109,15 @@
     "button": {
       "markAsReviewed": "Megjelölés áttekintettként",
       "deleteNow": "Törlés Most",
-      "export": "Exportálás"
+      "export": "Exportálás",
+      "markAsUnreviewed": "Megjelölés nem ellenőrzöttként"
     }
+  },
+  "imagePicker": {
+    "selectImage": "Válassza ki egy követett tárgy képét",
+    "search": {
+      "placeholder": "Keresés cimke vagy alcimke alapján..."
+    },
+    "noImages": "Nem találhatók bélyegképek ehhez a kamerához"
   }
 }

@@ -2,21 +2,24 @@
 
 import logging
 import os
+import threading
 import warnings
 
-# importing this without pytorch or others causes a warning
-# https://github.com/huggingface/transformers/issues/27214
-# suppressed by setting env TRANSFORMERS_NO_ADVISORY_WARNINGS=1
 from transformers import AutoFeatureExtractor, AutoTokenizer
 from transformers.utils.logging import disable_progress_bar
 
 from frigate.comms.inter_process import InterProcessRequestor
 from frigate.const import MODEL_CACHE_DIR, UPDATE_MODEL_STATE
+from frigate.detectors.detection_runners import BaseModelRunner, get_optimized_runner
+
+# importing this without pytorch or others causes a warning
+# https://github.com/huggingface/transformers/issues/27214
+# suppressed by setting env TRANSFORMERS_NO_ADVISORY_WARNINGS=1
+from frigate.embeddings.types import EnrichmentModelTypeEnum
 from frigate.types import ModelStatusTypesEnum
 from frigate.util.downloader import ModelDownloader
 
 from .base_embedding import BaseEmbedding
-from .runner import ONNXModelRunner
 
 warnings.filterwarnings(
     "ignore",
@@ -52,6 +55,7 @@ class JinaV1TextEmbedding(BaseEmbedding):
         self.tokenizer = None
         self.feature_extractor = None
         self.runner = None
+        self._lock = threading.Lock()
         files_names = list(self.download_urls.keys()) + [self.tokenizer_file]
 
         if not all(
@@ -125,24 +129,25 @@ class JinaV1TextEmbedding(BaseEmbedding):
                 clean_up_tokenization_spaces=True,
             )
 
-            self.runner = ONNXModelRunner(
+            self.runner = get_optimized_runner(
                 os.path.join(self.download_path, self.model_file),
                 self.device,
-                self.model_size,
+                model_type=EnrichmentModelTypeEnum.jina_v1.value,
             )
 
     def _preprocess_inputs(self, raw_inputs):
-        max_length = max(len(self.tokenizer.encode(text)) for text in raw_inputs)
-        return [
-            self.tokenizer(
-                text,
-                padding="max_length",
-                truncation=True,
-                max_length=max_length,
-                return_tensors="np",
-            )
-            for text in raw_inputs
-        ]
+        with self._lock:
+            max_length = max(len(self.tokenizer.encode(text)) for text in raw_inputs)
+            return [
+                self.tokenizer(
+                    text,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=max_length,
+                    return_tensors="np",
+                )
+                for text in raw_inputs
+            ]
 
 
 class JinaV1ImageEmbedding(BaseEmbedding):
@@ -171,7 +176,8 @@ class JinaV1ImageEmbedding(BaseEmbedding):
         self.device = device
         self.download_path = os.path.join(MODEL_CACHE_DIR, self.model_name)
         self.feature_extractor = None
-        self.runner: ONNXModelRunner | None = None
+        self.runner: BaseModelRunner | None = None
+        self._lock = threading.Lock()
         files_names = list(self.download_urls.keys())
         if not all(
             os.path.exists(os.path.join(self.download_path, n)) for n in files_names
@@ -184,6 +190,9 @@ class JinaV1ImageEmbedding(BaseEmbedding):
                 download_func=self._download_model,
             )
             self.downloader.ensure_model_files()
+            # Avoid lazy loading in worker threads: block until downloads complete
+            # and load the model on the main thread during initialization.
+            self._load_model_and_utils()
         else:
             self.downloader = None
             ModelDownloader.mark_files_state(
@@ -204,15 +213,16 @@ class JinaV1ImageEmbedding(BaseEmbedding):
                 f"{MODEL_CACHE_DIR}/{self.model_name}",
             )
 
-            self.runner = ONNXModelRunner(
+            self.runner = get_optimized_runner(
                 os.path.join(self.download_path, self.model_file),
                 self.device,
-                self.model_size,
+                model_type=EnrichmentModelTypeEnum.jina_v1.value,
             )
 
     def _preprocess_inputs(self, raw_inputs):
-        processed_images = [self._process_image(img) for img in raw_inputs]
-        return [
-            self.feature_extractor(images=image, return_tensors="np")
-            for image in processed_images
-        ]
+        with self._lock:
+            processed_images = [self._process_image(img) for img in raw_inputs]
+            return [
+                self.feature_extractor(images=image, return_tensors="np")
+                for image in processed_images
+            ]

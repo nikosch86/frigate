@@ -8,25 +8,31 @@ import os
 import subprocess as sp
 import time
 from datetime import datetime, timedelta, timezone
+from functools import reduce
 from pathlib import Path as FilePath
-from typing import Any
+from typing import Any, List
 from urllib.parse import unquote
 
 import cv2
 import numpy as np
 import pytz
-from fastapi import APIRouter, Path, Query, Request, Response
-from fastapi.params import Depends
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pathvalidate import sanitize_filename
-from peewee import DoesNotExist, fn
+from peewee import DoesNotExist, fn, operator
 from tzlocal import get_localzone_name
 
+from frigate.api.auth import (
+    allow_any_authenticated,
+    get_allowed_cameras_for_filter,
+    require_camera_access,
+)
 from frigate.api.defs.query.media_query_parameters import (
     Extension,
     MediaEventsSnapshotQueryParams,
     MediaLatestFrameQueryParams,
     MediaMjpegFeedQueryParams,
+    MediaRecordingsAvailabilityQueryParams,
     MediaRecordingsSummaryQueryParams,
 )
 from frigate.api.defs.tags import Tags
@@ -42,18 +48,17 @@ from frigate.const import (
 )
 from frigate.models import Event, Previews, Recordings, Regions, ReviewSegment
 from frigate.track.object_processing import TrackedObjectProcessor
-from frigate.util.builtin import get_tz_modifiers
+from frigate.util.file import get_event_thumbnail_bytes
 from frigate.util.image import get_image_from_recording
-from frigate.util.path import get_event_thumbnail_bytes
+from frigate.util.time import get_dst_transitions
 
 logger = logging.getLogger(__name__)
-
 
 router = APIRouter(tags=[Tags.media])
 
 
-@router.get("/{camera_name}")
-def mjpeg_feed(
+@router.get("/{camera_name}", dependencies=[Depends(require_camera_access)])
+async def mjpeg_feed(
     request: Request,
     camera_name: str,
     params: MediaMjpegFeedQueryParams = Depends(),
@@ -109,7 +114,7 @@ def imagestream(
         )
 
 
-@router.get("/{camera_name}/ptz/info")
+@router.get("/{camera_name}/ptz/info", dependencies=[Depends(require_camera_access)])
 async def camera_ptz_info(request: Request, camera_name: str):
     if camera_name in request.app.frigate_config.cameras:
         # Schedule get_camera_info in the OnvifController's event loop
@@ -125,8 +130,10 @@ async def camera_ptz_info(request: Request, camera_name: str):
         )
 
 
-@router.get("/{camera_name}/latest.{extension}")
-def latest_frame(
+@router.get(
+    "/{camera_name}/latest.{extension}", dependencies=[Depends(require_camera_access)]
+)
+async def latest_frame(
     request: Request,
     camera_name: str,
     extension: Extension,
@@ -139,6 +146,7 @@ def latest_frame(
         "zones": params.zones,
         "mask": params.mask,
         "motion_boxes": params.motion,
+        "paths": params.paths,
         "regions": params.regions,
     }
     quality = params.quality
@@ -233,8 +241,11 @@ def latest_frame(
         )
 
 
-@router.get("/{camera_name}/recordings/{frame_time}/snapshot.{format}")
-def get_snapshot_from_recording(
+@router.get(
+    "/{camera_name}/recordings/{frame_time}/snapshot.{format}",
+    dependencies=[Depends(require_camera_access)],
+)
+async def get_snapshot_from_recording(
     request: Request,
     camera_name: str,
     frame_time: float,
@@ -320,8 +331,10 @@ def get_snapshot_from_recording(
         )
 
 
-@router.post("/{camera_name}/plus/{frame_time}")
-def submit_recording_snapshot_to_plus(
+@router.post(
+    "/{camera_name}/plus/{frame_time}", dependencies=[Depends(require_camera_access)]
+)
+async def submit_recording_snapshot_to_plus(
     request: Request, camera_name: str, frame_time: str
 ):
     if camera_name not in request.app.frigate_config.cameras:
@@ -384,7 +397,7 @@ def submit_recording_snapshot_to_plus(
         )
 
 
-@router.get("/recordings/storage")
+@router.get("/recordings/storage", dependencies=[Depends(allow_any_authenticated())])
 def get_recordings_storage_usage(request: Request):
     recording_stats = request.app.stats_emitter.get_latest_stats()["service"][
         "storage"
@@ -408,112 +421,196 @@ def get_recordings_storage_usage(request: Request):
     return JSONResponse(content=camera_usages)
 
 
-@router.get("/recordings/summary")
-def all_recordings_summary(params: MediaRecordingsSummaryQueryParams = Depends()):
+@router.get("/recordings/summary", dependencies=[Depends(allow_any_authenticated())])
+def all_recordings_summary(
+    request: Request,
+    params: MediaRecordingsSummaryQueryParams = Depends(),
+    allowed_cameras: List[str] = Depends(get_allowed_cameras_for_filter),
+):
     """Returns true/false by day indicating if recordings exist"""
-    hour_modifier, minute_modifier, seconds_offset = get_tz_modifiers(params.timezone)
 
     cameras = params.cameras
+    if cameras != "all":
+        requested = set(unquote(cameras).split(","))
+        filtered = requested.intersection(allowed_cameras)
+        if not filtered:
+            return JSONResponse(content={})
+        camera_list = list(filtered)
+    else:
+        camera_list = allowed_cameras
 
-    query = (
+    time_range_query = (
         Recordings.select(
-            fn.strftime(
-                "%Y-%m-%d",
-                fn.datetime(
-                    Recordings.start_time + seconds_offset,
-                    "unixepoch",
-                    hour_modifier,
-                    minute_modifier,
-                ),
-            ).alias("day")
+            fn.MIN(Recordings.start_time).alias("min_time"),
+            fn.MAX(Recordings.start_time).alias("max_time"),
         )
-        .group_by(
-            fn.strftime(
-                "%Y-%m-%d",
-                fn.datetime(
-                    Recordings.start_time + seconds_offset,
-                    "unixepoch",
-                    hour_modifier,
-                    minute_modifier,
-                ),
-            )
-        )
-        .order_by(Recordings.start_time.desc())
+        .where(Recordings.camera << camera_list)
+        .dicts()
+        .get()
     )
 
-    if cameras != "all":
-        query = query.where(Recordings.camera << cameras.split(","))
+    min_time = time_range_query.get("min_time")
+    max_time = time_range_query.get("max_time")
 
-    recording_days = query.namedtuples()
-    days = {day.day: True for day in recording_days}
+    if min_time is None or max_time is None:
+        return JSONResponse(content={})
 
-    return JSONResponse(content=days)
+    dst_periods = get_dst_transitions(params.timezone, min_time, max_time)
+
+    days: dict[str, bool] = {}
+
+    for period_start, period_end, period_offset in dst_periods:
+        hours_offset = int(period_offset / 60 / 60)
+        minutes_offset = int(period_offset / 60 - hours_offset * 60)
+        period_hour_modifier = f"{hours_offset} hour"
+        period_minute_modifier = f"{minutes_offset} minute"
+
+        period_query = (
+            Recordings.select(
+                fn.strftime(
+                    "%Y-%m-%d",
+                    fn.datetime(
+                        Recordings.start_time,
+                        "unixepoch",
+                        period_hour_modifier,
+                        period_minute_modifier,
+                    ),
+                ).alias("day")
+            )
+            .where(
+                (Recordings.camera << camera_list)
+                & (Recordings.end_time >= period_start)
+                & (Recordings.start_time <= period_end)
+            )
+            .group_by(
+                fn.strftime(
+                    "%Y-%m-%d",
+                    fn.datetime(
+                        Recordings.start_time,
+                        "unixepoch",
+                        period_hour_modifier,
+                        period_minute_modifier,
+                    ),
+                )
+            )
+            .order_by(Recordings.start_time.desc())
+            .namedtuples()
+        )
+
+        for g in period_query:
+            days[g.day] = True
+
+    return JSONResponse(content=dict(sorted(days.items())))
 
 
-@router.get("/{camera_name}/recordings/summary")
-def recordings_summary(camera_name: str, timezone: str = "utc"):
+@router.get(
+    "/{camera_name}/recordings/summary", dependencies=[Depends(require_camera_access)]
+)
+async def recordings_summary(camera_name: str, timezone: str = "utc"):
     """Returns hourly summary for recordings of given camera"""
-    hour_modifier, minute_modifier, seconds_offset = get_tz_modifiers(timezone)
-    recording_groups = (
+
+    time_range_query = (
         Recordings.select(
-            fn.strftime(
-                "%Y-%m-%d %H",
-                fn.datetime(
-                    Recordings.start_time, "unixepoch", hour_modifier, minute_modifier
-                ),
-            ).alias("hour"),
-            fn.SUM(Recordings.duration).alias("duration"),
-            fn.SUM(Recordings.motion).alias("motion"),
-            fn.SUM(Recordings.objects).alias("objects"),
+            fn.MIN(Recordings.start_time).alias("min_time"),
+            fn.MAX(Recordings.start_time).alias("max_time"),
         )
         .where(Recordings.camera == camera_name)
-        .group_by((Recordings.start_time + seconds_offset).cast("int") / 3600)
-        .order_by(Recordings.start_time.desc())
-        .namedtuples()
+        .dicts()
+        .get()
     )
 
-    event_groups = (
-        Event.select(
-            fn.strftime(
-                "%Y-%m-%d %H",
-                fn.datetime(
-                    Event.start_time, "unixepoch", hour_modifier, minute_modifier
-                ),
-            ).alias("hour"),
-            fn.COUNT(Event.id).alias("count"),
+    min_time = time_range_query.get("min_time")
+    max_time = time_range_query.get("max_time")
+
+    days: dict[str, dict] = {}
+
+    if min_time is None or max_time is None:
+        return JSONResponse(content=list(days.values()))
+
+    dst_periods = get_dst_transitions(timezone, min_time, max_time)
+
+    for period_start, period_end, period_offset in dst_periods:
+        hours_offset = int(period_offset / 60 / 60)
+        minutes_offset = int(period_offset / 60 - hours_offset * 60)
+        period_hour_modifier = f"{hours_offset} hour"
+        period_minute_modifier = f"{minutes_offset} minute"
+
+        recording_groups = (
+            Recordings.select(
+                fn.strftime(
+                    "%Y-%m-%d %H",
+                    fn.datetime(
+                        Recordings.start_time,
+                        "unixepoch",
+                        period_hour_modifier,
+                        period_minute_modifier,
+                    ),
+                ).alias("hour"),
+                fn.SUM(Recordings.duration).alias("duration"),
+                fn.SUM(Recordings.motion).alias("motion"),
+                fn.SUM(Recordings.objects).alias("objects"),
+            )
+            .where(
+                (Recordings.camera == camera_name)
+                & (Recordings.end_time >= period_start)
+                & (Recordings.start_time <= period_end)
+            )
+            .group_by((Recordings.start_time + period_offset).cast("int") / 3600)
+            .order_by(Recordings.start_time.desc())
+            .namedtuples()
         )
-        .where(Event.camera == camera_name, Event.has_clip)
-        .group_by((Event.start_time + seconds_offset).cast("int") / 3600)
-        .namedtuples()
-    )
 
-    event_map = {g.hour: g.count for g in event_groups}
+        event_groups = (
+            Event.select(
+                fn.strftime(
+                    "%Y-%m-%d %H",
+                    fn.datetime(
+                        Event.start_time,
+                        "unixepoch",
+                        period_hour_modifier,
+                        period_minute_modifier,
+                    ),
+                ).alias("hour"),
+                fn.COUNT(Event.id).alias("count"),
+            )
+            .where(Event.camera == camera_name, Event.has_clip)
+            .where(
+                (Event.start_time >= period_start) & (Event.start_time <= period_end)
+            )
+            .group_by((Event.start_time + period_offset).cast("int") / 3600)
+            .namedtuples()
+        )
 
-    days = {}
+        event_map = {g.hour: g.count for g in event_groups}
 
-    for recording_group in recording_groups:
-        parts = recording_group.hour.split()
-        hour = parts[1]
-        day = parts[0]
-        events_count = event_map.get(recording_group.hour, 0)
-        hour_data = {
-            "hour": hour,
-            "events": events_count,
-            "motion": recording_group.motion,
-            "objects": recording_group.objects,
-            "duration": round(recording_group.duration),
-        }
-        if day not in days:
-            days[day] = {"events": events_count, "hours": [hour_data], "day": day}
-        else:
-            days[day]["events"] += events_count
-            days[day]["hours"].append(hour_data)
+        for recording_group in recording_groups:
+            parts = recording_group.hour.split()
+            hour = parts[1]
+            day = parts[0]
+            events_count = event_map.get(recording_group.hour, 0)
+            hour_data = {
+                "hour": hour,
+                "events": events_count,
+                "motion": recording_group.motion,
+                "objects": recording_group.objects,
+                "duration": round(recording_group.duration),
+            }
+            if day in days:
+                # merge counts if already present (edge-case at DST boundary)
+                days[day]["events"] += events_count or 0
+                days[day]["hours"].append(hour_data)
+            else:
+                days[day] = {
+                    "events": events_count or 0,
+                    "hours": [hour_data],
+                    "day": day,
+                }
 
     return JSONResponse(content=list(days.values()))
 
 
-@router.get("/{camera_name}/recordings")
-def recordings(
+@router.get("/{camera_name}/recordings", dependencies=[Depends(require_camera_access)])
+async def recordings(
     camera_name: str,
     after: float = (datetime.now() - timedelta(hours=1)).timestamp(),
     before: float = datetime.now().timestamp(),
@@ -543,10 +640,96 @@ def recordings(
 
 
 @router.get(
+    "/recordings/unavailable",
+    response_model=list[dict],
+    dependencies=[Depends(allow_any_authenticated())],
+)
+async def no_recordings(
+    request: Request,
+    params: MediaRecordingsAvailabilityQueryParams = Depends(),
+    allowed_cameras: List[str] = Depends(get_allowed_cameras_for_filter),
+):
+    """Get time ranges with no recordings."""
+    cameras = params.cameras
+    if cameras != "all":
+        requested = set(unquote(cameras).split(","))
+        filtered = requested.intersection(allowed_cameras)
+        if not filtered:
+            return JSONResponse(content=[])
+        cameras = ",".join(filtered)
+    else:
+        cameras = allowed_cameras
+
+    before = params.before or datetime.datetime.now().timestamp()
+    after = (
+        params.after
+        or (datetime.datetime.now() - datetime.timedelta(hours=1)).timestamp()
+    )
+    scale = params.scale
+
+    clauses = [(Recordings.end_time >= after) & (Recordings.start_time <= before)]
+    if cameras != "all":
+        camera_list = cameras.split(",")
+        clauses.append((Recordings.camera << camera_list))
+    else:
+        camera_list = allowed_cameras
+
+    # Get recording start times
+    data: list[Recordings] = (
+        Recordings.select(Recordings.start_time, Recordings.end_time)
+        .where(reduce(operator.and_, clauses))
+        .order_by(Recordings.start_time.asc())
+        .dicts()
+        .iterator()
+    )
+
+    # Convert recordings to list of (start, end) tuples
+    recordings = [(r["start_time"], r["end_time"]) for r in data]
+
+    # Iterate through time segments and check if each has any recording
+    no_recording_segments = []
+    current = after
+    current_gap_start = None
+
+    while current < before:
+        segment_end = min(current + scale, before)
+
+        # Check if this segment overlaps with any recording
+        has_recording = any(
+            rec_start < segment_end and rec_end > current
+            for rec_start, rec_end in recordings
+        )
+
+        if not has_recording:
+            # This segment has no recordings
+            if current_gap_start is None:
+                current_gap_start = current  # Start a new gap
+        else:
+            # This segment has recordings
+            if current_gap_start is not None:
+                # End the current gap and append it
+                no_recording_segments.append(
+                    {"start_time": int(current_gap_start), "end_time": int(current)}
+                )
+                current_gap_start = None
+
+        current = segment_end
+
+    # Append the last gap if it exists
+    if current_gap_start is not None:
+        no_recording_segments.append(
+            {"start_time": int(current_gap_start), "end_time": int(before)}
+        )
+
+    return JSONResponse(content=no_recording_segments)
+
+
+@router.get(
     "/{camera_name}/start/{start_ts}/end/{end_ts}/clip.mp4",
+    dependencies=[Depends(require_camera_access)],
     description="For iOS devices, use the master.m3u8 HLS link instead of clip.mp4. Safari does not reliably process progressive mp4 files.",
 )
-def recording_clip(
+async def recording_clip(
     request: Request,
     camera_name: str,
     start_ts: float,
@@ -586,6 +769,15 @@ def recording_clip(
         .where(Recordings.camera == camera_name)
         .order_by(Recordings.start_time.asc())
     )
+
+    if recordings.count() == 0:
+        return JSONResponse(
+            content={
+                "success": False,
+                "message": "No recordings found for the specified time range",
+            },
+            status_code=400,
+        )
 
     file_name = sanitize_filename(f"playlist_{camera_name}_{start_ts}-{end_ts}.txt")
     file_path = os.path.join(CACHE_DIR, file_name)
@@ -642,9 +834,22 @@ def recording_clip(
 
 @router.get(
     "/vod/{camera_name}/start/{start_ts}/end/{end_ts}",
+    dependencies=[Depends(require_camera_access)],
     description="Returns an HLS playlist for the specified timestamp-range on the specified camera. Append /master.m3u8 or /index.m3u8 for HLS playback.",
 )
-def vod_ts(camera_name: str, start_ts: float, end_ts: float):
+async def vod_ts(
+    camera_name: str,
+    start_ts: float,
+    end_ts: float,
+    force_discontinuity: bool = False,
+):
+    logger.debug(
+        "VOD: Generating VOD for %s from %s to %s with force_discontinuity=%s",
+        camera_name,
+        start_ts,
+        end_ts,
+        force_discontinuity,
+    )
     recordings = (
         Recordings.select(
             Recordings.path,
@@ -664,10 +869,19 @@ def vod_ts(camera_name: str, start_ts: float, end_ts: float):
 
     clips = []
     durations = []
+    min_duration_ms = 100  # Minimum 100ms to ensure at least one video frame
     max_duration_ms = MAX_SEGMENT_DURATION * 1000
 
     recording: Recordings
     for recording in recordings:
+        logger.debug(
+            "VOD: processing recording: %s start=%s end=%s duration=%s",
+            recording.path,
+            recording.start_time,
+            recording.end_time,
+            recording.duration,
+        )
+
         clip = {"type": "source", "path": recording.path}
         duration = int(recording.duration * 1000)
 
@@ -676,19 +890,35 @@ def vod_ts(camera_name: str, start_ts: float, end_ts: float):
             inpoint = int((start_ts - recording.start_time) * 1000)
             clip["clipFrom"] = inpoint
             duration -= inpoint
+            logger.debug(
+                "VOD: applied clipFrom %sms to %s",
+                inpoint,
+                recording.path,
+            )
 
         # adjust end if recording.end_time is after end_ts
         if recording.end_time > end_ts:
             duration -= int((recording.end_time - end_ts) * 1000)
 
-        if duration <= 0:
-            # skip if the clip has no valid duration
+        if duration < min_duration_ms:
+            # skip if the clip has no valid duration (too short to contain frames)
+            logger.debug(
+                "VOD: skipping recording %s - resulting duration %sms too short",
+                recording.path,
+                duration,
+            )
             continue
 
-        if 0 < duration < max_duration_ms:
+        if min_duration_ms <= duration < max_duration_ms:
             clip["keyFrameDurations"] = [duration]
             clips.append(clip)
             durations.append(duration)
+            logger.debug(
+                "VOD: added clip %s duration_ms=%s clipFrom=%s",
+                recording.path,
+                duration,
+                clip.get("clipFrom"),
+            )
         else:
             logger.warning(f"Recording clip is missing or empty: {recording.path}")
 
@@ -708,7 +938,7 @@ def vod_ts(camera_name: str, start_ts: float, end_ts: float):
     return JSONResponse(
         content={
             "cache": hour_ago.timestamp() > start_ts,
-            "discontinuity": False,
+            "discontinuity": force_discontinuity,
             "consistentSequenceMediaInfo": True,
             "durations": durations,
             "segment_duration": max(durations),
@@ -719,20 +949,24 @@ def vod_ts(camera_name: str, start_ts: float, end_ts: float):
 
 @router.get(
     "/vod/{year_month}/{day}/{hour}/{camera_name}",
+    dependencies=[Depends(require_camera_access)],
     description="Returns an HLS playlist for the specified date-time on the specified camera. Append /master.m3u8 or /index.m3u8 for HLS playback.",
 )
-def vod_hour_no_timezone(year_month: str, day: int, hour: int, camera_name: str):
+async def vod_hour_no_timezone(year_month: str, day: int, hour: int, camera_name: str):
     """VOD for specific hour. Uses the default timezone (UTC)."""
-    return vod_hour(
+    return await vod_hour(
         year_month, day, hour, camera_name, get_localzone_name().replace("/", ",")
     )
 
 
 @router.get(
     "/vod/{year_month}/{day}/{hour}/{camera_name}/{tz_name}",
+    dependencies=[Depends(require_camera_access)],
     description="Returns an HLS playlist for the specified date-time (with timezone) on the specified camera. Append /master.m3u8 or /index.m3u8 for HLS playback.",
 )
-def vod_hour(year_month: str, day: int, hour: int, camera_name: str, tz_name: str):
+async def vod_hour(
+    year_month: str, day: int, hour: int, camera_name: str, tz_name: str
+):
     parts = year_month.split("-")
     start_date = (
         datetime(int(parts[0]), int(parts[1]), day, hour, tzinfo=timezone.utc)
@@ -742,14 +976,16 @@ def vod_hour(year_month: str, day: int, hour: int, camera_name: str, tz_name: st
     start_ts = start_date.timestamp()
     end_ts = end_date.timestamp()
 
-    return vod_ts(camera_name, start_ts, end_ts)
+    return await vod_ts(camera_name, start_ts, end_ts)
 
 
 @router.get(
     "/vod/event/{event_id}",
+    dependencies=[Depends(allow_any_authenticated())],
     description="Returns an HLS playlist for the specified object. Append /master.m3u8 or /index.m3u8 for HLS playback.",
 )
-def vod_event(
+async def vod_event(
+    request: Request,
     event_id: str,
     padding: int = Query(0, description="Padding to apply to the vod."),
 ):
@@ -765,22 +1001,14 @@ def vod_event(
             status_code=404,
         )
 
-    if not event.has_clip:
-        logger.error(f"Event does not have recordings: {event_id}")
-        return JSONResponse(
-            content={
-                "success": False,
-                "message": "Recordings not available.",
-            },
-            status_code=404,
-        )
+    await require_camera_access(event.camera, request=request)
 
     end_ts = (
         datetime.now().timestamp()
         if event.end_time is None
         else (event.end_time + padding)
     )
-    vod_response = vod_ts(event.camera, event.start_time - padding, end_ts)
+    vod_response = await vod_ts(event.camera, event.start_time - padding, end_ts)
 
     # If the recordings are not found and the event started more than 5 minutes ago, set has_clip to false
     if (
@@ -795,10 +1023,23 @@ def vod_event(
 
 
 @router.get(
+    "/vod/clip/{camera_name}/start/{start_ts}/end/{end_ts}",
+    dependencies=[Depends(require_camera_access)],
+    description="Returns an HLS playlist for a timestamp range with HLS discontinuity enabled. Append /master.m3u8 or /index.m3u8 for HLS playback.",
+)
+async def vod_clip(
+    camera_name: str,
+    start_ts: float,
+    end_ts: float,
+):
+    return await vod_ts(camera_name, start_ts, end_ts, force_discontinuity=True)
+
+
+@router.get(
     "/events/{event_id}/snapshot.jpg",
     description="Returns a snapshot image for the specified object id. NOTE: The query params only take affect while the event is in-progress. Once the event has ended the snapshot configuration is used.",
 )
-def event_snapshot(
+async def event_snapshot(
     request: Request,
     event_id: str,
     params: MediaEventsSnapshotQueryParams = Depends(),
@@ -808,6 +1049,7 @@ def event_snapshot(
     try:
         event = Event.get(Event.id == event_id, Event.end_time != None)
         event_complete = True
+        await require_camera_access(event.camera, request=request)
         if not event.has_snapshot:
             return JSONResponse(
                 content={"success": False, "message": "Snapshot not available"},
@@ -836,6 +1078,7 @@ def event_snapshot(
                             height=params.height,
                             quality=params.quality,
                         )
+                        await require_camera_access(camera_state.name, request=request)
         except Exception:
             return JSONResponse(
                 content={"success": False, "message": "Ongoing event not found"},
@@ -868,8 +1111,11 @@ def event_snapshot(
     )
 
 
-@router.get("/events/{event_id}/thumbnail.{extension}")
-def event_thumbnail(
+@router.get(
+    "/events/{event_id}/thumbnail.{extension}",
+    dependencies=[Depends(require_camera_access)],
+)
+async def event_thumbnail(
     request: Request,
     event_id: str,
     extension: Extension,
@@ -882,6 +1128,7 @@ def event_thumbnail(
     event_complete = False
     try:
         event: Event = Event.get(Event.id == event_id)
+        await require_camera_access(event.camera, request=request)
         if event.end_time is not None:
             event_complete = True
 
@@ -944,7 +1191,7 @@ def event_thumbnail(
     )
 
 
-@router.get("/{camera_name}/grid.jpg")
+@router.get("/{camera_name}/grid.jpg", dependencies=[Depends(require_camera_access)])
 def grid_snapshot(
     request: Request, camera_name: str, color: str = "green", font_scale: float = 0.5
 ):
@@ -1065,9 +1312,12 @@ def grid_snapshot(
         )
 
 
-@router.get("/events/{event_id}/snapshot-clean.png")
+@router.get(
+    "/events/{event_id}/snapshot-clean.webp",
+    dependencies=[Depends(require_camera_access)],
+)
 def event_snapshot_clean(request: Request, event_id: str, download: bool = False):
-    png_bytes = None
+    webp_bytes = None
     try:
         event = Event.get(Event.id == event_id)
         snapshot_config = request.app.frigate_config.cameras[event.camera].snapshots
@@ -1089,7 +1339,7 @@ def event_snapshot_clean(request: Request, event_id: str, download: bool = False
                     if event_id in camera_state.tracked_objects:
                         tracked_obj = camera_state.tracked_objects.get(event_id)
                         if tracked_obj is not None:
-                            png_bytes = tracked_obj.get_clean_png()
+                            webp_bytes = tracked_obj.get_clean_webp()
                             break
             except Exception:
                 return JSONResponse(
@@ -1105,12 +1355,56 @@ def event_snapshot_clean(request: Request, event_id: str, download: bool = False
         return JSONResponse(
             content={"success": False, "message": "Event not found"}, status_code=404
         )
-    if png_bytes is None:
+    if webp_bytes is None:
         try:
-            clean_snapshot_path = os.path.join(
+            # webp
+            clean_snapshot_path_webp = os.path.join(
+                CLIPS_DIR, f"{event.camera}-{event.id}-clean.webp"
+            )
+            # png (legacy)
+            clean_snapshot_path_png = os.path.join(
                 CLIPS_DIR, f"{event.camera}-{event.id}-clean.png"
             )
-            if not os.path.exists(clean_snapshot_path):
+
+            if os.path.exists(clean_snapshot_path_webp):
+                with open(clean_snapshot_path_webp, "rb") as image_file:
+                    webp_bytes = image_file.read()
+            elif os.path.exists(clean_snapshot_path_png):
+                # convert png to webp and save for future use
+                png_image = cv2.imread(clean_snapshot_path_png, cv2.IMREAD_UNCHANGED)
+                if png_image is None:
+                    return JSONResponse(
+                        content={
+                            "success": False,
+                            "message": "Invalid png snapshot",
+                        },
+                        status_code=400,
+                    )
+
+                ret, webp_data = cv2.imencode(
+                    ".webp", png_image, [int(cv2.IMWRITE_WEBP_QUALITY), 60]
+                )
+                if not ret:
+                    return JSONResponse(
+                        content={
+                            "success": False,
+                            "message": "Unable to convert png to webp",
+                        },
+                        status_code=400,
+                    )
+
+                webp_bytes = webp_data.tobytes()
+
+                # save the converted webp for future requests
+                try:
+                    with open(clean_snapshot_path_webp, "wb") as f:
+                        f.write(webp_bytes)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to save converted webp for event {event.id}: {e}"
+                    )
+                    # continue since we now have the data to return
+            else:
                 return JSONResponse(
                     content={
                         "success": False,
@@ -1118,39 +1412,37 @@ def event_snapshot_clean(request: Request, event_id: str, download: bool = False
                     },
                     status_code=404,
                 )
-            with open(
-                os.path.join(CLIPS_DIR, f"{event.camera}-{event.id}-clean.png"), "rb"
-            ) as image_file:
-                png_bytes = image_file.read()
         except Exception:
-            logger.error(f"Unable to load clean png for event: {event.id}")
+            logger.error(f"Unable to load clean snapshot for event: {event.id}")
             return JSONResponse(
                 content={
                     "success": False,
-                    "message": "Unable to load clean png for event",
+                    "message": "Unable to load clean snapshot for event",
                 },
                 status_code=400,
             )
 
     headers = {
-        "Content-Type": "image/png",
+        "Content-Type": "image/webp",
         "Cache-Control": "private, max-age=31536000",
     }
 
     if download:
         headers["Content-Disposition"] = (
-            f"attachment; filename=snapshot-{event_id}-clean.png"
+            f"attachment; filename=snapshot-{event_id}-clean.webp"
         )
 
     return Response(
-        png_bytes,
-        media_type="image/png",
+        webp_bytes,
+        media_type="image/webp",
         headers=headers,
     )
 
 
-@router.get("/events/{event_id}/clip.mp4")
-def event_clip(
+@router.get(
+    "/events/{event_id}/clip.mp4", dependencies=[Depends(require_camera_access)]
+)
+async def event_clip(
     request: Request,
     event_id: str,
     padding: int = Query(0, description="Padding to apply to clip."),
@@ -1172,10 +1464,14 @@ def event_clip(
         if event.end_time is None
         else event.end_time + padding
     )
-    return recording_clip(request, event.camera, event.start_time - padding, end_ts)
+    return await recording_clip(
+        request, event.camera, event.start_time - padding, end_ts
+    )
 
 
-@router.get("/events/{event_id}/preview.gif")
+@router.get(
+    "/events/{event_id}/preview.gif", dependencies=[Depends(require_camera_access)]
+)
 def event_preview(request: Request, event_id: str):
     try:
         event: Event = Event.get(Event.id == event_id)
@@ -1191,7 +1487,10 @@ def event_preview(request: Request, event_id: str):
     return preview_gif(request, event.camera, start_ts, end_ts)
 
 
-@router.get("/{camera_name}/start/{start_ts}/end/{end_ts}/preview.gif")
+@router.get(
+    "/{camera_name}/start/{start_ts}/end/{end_ts}/preview.gif",
+    dependencies=[Depends(require_camera_access)],
+)
 def preview_gif(
     request: Request,
     camera_name: str,
@@ -1347,7 +1646,10 @@ def preview_gif(
     )
 
 
-@router.get("/{camera_name}/start/{start_ts}/end/{end_ts}/preview.mp4")
+@router.get(
+    "/{camera_name}/start/{start_ts}/end/{end_ts}/preview.mp4",
+    dependencies=[Depends(require_camera_access)],
+)
 def preview_mp4(
     request: Request,
     camera_name: str,
@@ -1522,7 +1824,7 @@ def preview_mp4(
     )
 
 
-@router.get("/review/{event_id}/preview")
+@router.get("/review/{event_id}/preview", dependencies=[Depends(require_camera_access)])
 def review_preview(
     request: Request,
     event_id: str,
@@ -1548,8 +1850,12 @@ def review_preview(
         return preview_mp4(request, review.camera, start_ts, end_ts)
 
 
-@router.get("/preview/{file_name}/thumbnail.jpg")
-@router.get("/preview/{file_name}/thumbnail.webp")
+@router.get(
+    "/preview/{file_name}/thumbnail.jpg", dependencies=[Depends(require_camera_access)]
+)
+@router.get(
+    "/preview/{file_name}/thumbnail.webp", dependencies=[Depends(require_camera_access)]
+)
 def preview_thumbnail(file_name: str):
     """Get a thumbnail from the cached preview frames."""
     if len(file_name) > 1000:
@@ -1587,9 +1893,14 @@ def preview_thumbnail(file_name: str):
 ####################### dynamic routes ###########################
 
 
-@router.get("/{camera_name}/{label}/best.jpg")
-@router.get("/{camera_name}/{label}/thumbnail.jpg")
-def label_thumbnail(request: Request, camera_name: str, label: str):
+@router.get(
+    "/{camera_name}/{label}/best.jpg", dependencies=[Depends(require_camera_access)]
+)
+@router.get(
+    "/{camera_name}/{label}/thumbnail.jpg",
+    dependencies=[Depends(require_camera_access)],
+)
+async def label_thumbnail(request: Request, camera_name: str, label: str):
     label = unquote(label)
     event_query = Event.select(fn.MAX(Event.id)).where(Event.camera == camera_name)
     if label != "any":
@@ -1598,7 +1909,7 @@ def label_thumbnail(request: Request, camera_name: str, label: str):
     try:
         event_id = event_query.scalar()
 
-        return event_thumbnail(request, event_id, Extension.jpg, 60)
+        return await event_thumbnail(request, event_id, Extension.jpg, 60)
     except DoesNotExist:
         frame = np.zeros((175, 175, 3), np.uint8)
         ret, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
@@ -1610,8 +1921,10 @@ def label_thumbnail(request: Request, camera_name: str, label: str):
         )
 
 
-@router.get("/{camera_name}/{label}/clip.mp4")
-def label_clip(request: Request, camera_name: str, label: str):
+@router.get(
+    "/{camera_name}/{label}/clip.mp4", dependencies=[Depends(require_camera_access)]
+)
+async def label_clip(request: Request, camera_name: str, label: str):
     label = unquote(label)
     event_query = Event.select(fn.MAX(Event.id)).where(
         Event.camera == camera_name, Event.has_clip == True
@@ -1622,15 +1935,17 @@ def label_clip(request: Request, camera_name: str, label: str):
     try:
         event = event_query.get()
 
-        return event_clip(request, event.id)
+        return await event_clip(request, event.id, 0)
     except DoesNotExist:
         return JSONResponse(
             content={"success": False, "message": "Event not found"}, status_code=404
         )
 
 
-@router.get("/{camera_name}/{label}/snapshot.jpg")
-def label_snapshot(request: Request, camera_name: str, label: str):
+@router.get(
+    "/{camera_name}/{label}/snapshot.jpg", dependencies=[Depends(require_camera_access)]
+)
+async def label_snapshot(request: Request, camera_name: str, label: str):
     """Returns the snapshot image from the latest event for the given camera and label combo"""
     label = unquote(label)
     if label == "any":
@@ -1651,7 +1966,7 @@ def label_snapshot(request: Request, camera_name: str, label: str):
 
     try:
         event: Event = event_query.get()
-        return event_snapshot(request, event.id, MediaEventsSnapshotQueryParams())
+        return await event_snapshot(request, event.id, MediaEventsSnapshotQueryParams())
     except DoesNotExist:
         frame = np.zeros((720, 1280, 3), np.uint8)
         _, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])

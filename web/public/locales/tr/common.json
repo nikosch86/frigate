@@ -81,7 +81,11 @@
     "formattedTimestampMonthDayYear": {
       "12hour": "d MMM, yyyy",
       "24hour": "d MMM, yyyy"
-    }
+    },
+    "inProgress": "Devam ediyor",
+    "invalidStartTime": "Geçersiz başlangıç zamanı",
+    "invalidEndTime": "Geçersiz bitiş zamanı",
+    "never": "Asla"
   },
   "button": {
     "off": "KAPALI",
@@ -101,14 +105,14 @@
     "export": "Dışa aktar",
     "download": "İndir",
     "edit": "Düzenle",
-    "fullscreen": "Tam ekran",
+    "fullscreen": "Tam Ekran",
     "deleteNow": "Şimdi Sil",
     "apply": "Uygula",
     "reset": "Sıfırla",
     "done": "Bitti",
     "enabled": "Açık",
     "save": "Kaydet",
-    "exitFullscreen": "Tam ekrandan çık",
+    "exitFullscreen": "Tam Ekrandan Çık",
     "pictureInPicture": "Pencere içinde pencere",
     "copyCoordinates": "Koordinatları kopyala",
     "yes": "Evet",
@@ -118,7 +122,8 @@
     "cancel": "İptal",
     "twoWayTalk": "Çift Yönlü Ses",
     "close": "Kapat",
-    "delete": "Sil"
+    "delete": "Sil",
+    "continue": "Devam Et"
   },
   "menu": {
     "systemLogs": "Sistem günlükleri",
@@ -166,7 +171,15 @@
       "ru": "Русский (Rusça)",
       "yue": "粵語 (Kantonca)",
       "th": "ไทย (Tayca)",
-      "ca": "Català (Katalanca)"
+      "ca": "Català (Katalanca)",
+      "ptBR": "Português brasileiro (Brezilya Portekizcesi)",
+      "sr": "Српски (Sırpça)",
+      "sl": "Slovenščina (Slovence)",
+      "lt": "Lietuvių (Litvanyaca)",
+      "bg": "Български (Bulgarca)",
+      "gl": "Galego (Galiçyaca)",
+      "id": "Bahasa Indonesia (Endonezce)",
+      "ur": "اردو (Urduca)"
     },
     "withSystem": "Sistem",
     "theme": {
@@ -211,10 +224,17 @@
     "help": "Yardım",
     "faceLibrary": "Yüz Veritabanı",
     "systemMetrics": "Sistem metrikleri",
-    "uiPlayground": "UI Deneme Alanı"
+    "uiPlayground": "UI Deneme Alanı",
+    "classification": "Sınıflandırma"
   },
   "label": {
-    "back": "Geri"
+    "back": "Geri",
+    "hide": "{{item}} öğesini gizle",
+    "show": "{{item}} öğesini göster",
+    "ID": "ID",
+    "none": "Hiçbiri",
+    "all": "Tümü",
+    "other": "Diğer"
   },
   "notFound": {
     "documentTitle": "Bulunamadı - Frigate",
@@ -229,6 +249,14 @@
     "length": {
       "feet": "feet",
       "meters": "metre"
+    },
+    "data": {
+      "kbps": "kB/s",
+      "mbps": "MB/s",
+      "gbps": "GB/s",
+      "kbph": "kB/saat",
+      "mbph": "MB/saat",
+      "gbph": "GB/saat"
     }
   },
   "pagination": {
@@ -264,5 +292,18 @@
     "viewer": "Görüntüleyici",
     "admin": "Yönetici",
     "desc": "Yöneticiler Frigate arayüzündeki bütün özelliklere tam erişim sahibidir. Görüntüleyiciler ise yalnızca kameraları, eski görüntüleri ve inceleme öğelerini görüntülemekle sınırlıdır."
+  },
+  "readTheDocumentation": "Dökümantasyonu oku",
+  "list": {
+    "two": "{{0}} ve {{1}}",
+    "many": "{{items}} ve {{last}}",
+    "separatorWithSpace": ", "
+  },
+  "field": {
+    "optional": "İsteğe bağlı",
+    "internalID": "Frigate’ın yapılandırma ve veritabanında kullandığı Dahili Kimlik"
+  },
+  "information": {
+    "pixels": "{{area}}px"
   }
 }

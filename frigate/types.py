@@ -21,9 +21,13 @@ class ModelStatusTypesEnum(str, Enum):
     downloading = "downloading"
     downloaded = "downloaded"
     error = "error"
+    training = "training"
+    complete = "complete"
+    failed = "failed"
 
 
 class TrackedObjectUpdateTypesEnum(str, Enum):
     description = "description"
     face = "face"
     lpr = "lpr"
+    classification = "classification"
