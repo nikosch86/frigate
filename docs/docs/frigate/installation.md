@@ -3,11 +3,11 @@ id: installation
 title: Installation
 ---
 
-Frigate is a Docker container that can be run on any Docker host including as a [Home Assistant Add-on](https://www.home-assistant.io/addons/). Note that the Home Assistant Add-on is **not** the same thing as the integration. The [integration](/integrations/home-assistant) is required to integrate Frigate into Home Assistant, whether you are running Frigate as a standalone Docker container or as a Home Assistant Add-on.
+Frigate is a Docker container that can be run on any Docker host including as a [Home Assistant App](https://www.home-assistant.io/apps/). Note that the Home Assistant App is **not** the same thing as the integration. The [integration](/integrations/home-assistant) is required to integrate Frigate into Home Assistant, whether you are running Frigate as a standalone Docker container or as a Home Assistant App.
 
 :::tip
 
-If you already have Frigate installed as a Home Assistant Add-on, check out the [getting started guide](../guides/getting_started#configuring-frigate) to configure Frigate.
+If you already have Frigate installed as a Home Assistant App, check out the [getting started guide](../guides/getting_started#configuring-frigate) to configure Frigate.
 
 :::
 
@@ -56,7 +56,7 @@ services:
     volumes:
       - /path/to/your/config:/config
       - /path/to/your/storage:/media/frigate
-      - type: tmpfs # Recommended: 1GB of memory
+      - type: tmpfs # 1GB In-memory filesystem for recording segment storage
         target: /tmp/cache
         tmpfs:
           size: 1000000000
@@ -92,7 +92,7 @@ $ python -c 'print("{:.2f}MB".format(((1280 * 720 * 1.5 * 20 + 270480) / 1048576
 253MB
 ```
 
-The shm size cannot be set per container for Home Assistant add-ons. However, this is probably not required since by default Home Assistant Supervisor allocates `/dev/shm` with half the size of your total memory. If your machine has 8GB of memory, chances are that Frigate will have access to up to 4GB without any additional configuration.
+The shm size cannot be set per container for Home Assistant Apps. However, this is probably not required since by default Home Assistant Supervisor allocates `/dev/shm` with half the size of your total memory. If your machine has 8GB of memory, chances are that Frigate will have access to up to 4GB without any additional configuration.
 
 ## Extra Steps for Specific Hardware
 
@@ -123,7 +123,7 @@ On Raspberry Pi OS **Trixie**, the Hailo driver is no longer shipped with the ke
    :::note
 
    If you are **not** using a Raspberry Pi with **Bookworm OS**, skip this step and proceed directly to step 2.
-   
+
    If you are using Raspberry Pi with **Trixie OS**, also skip this step and proceed directly to step 2.
 
    :::
@@ -133,13 +133,13 @@ On Raspberry Pi OS **Trixie**, the Hailo driver is no longer shipped with the ke
    ```bash
    lsmod | grep hailo
    ```
-   
+
    If it shows `hailo_pci`, unload it:
 
    ```bash
    sudo modprobe -r hailo_pci
    ```
-   
+
    Then locate the built-in kernel driver and rename it so it cannot be loaded.
    Renaming allows the original driver to be restored later if needed.
    First, locate the currently installed kernel module:
@@ -149,28 +149,29 @@ On Raspberry Pi OS **Trixie**, the Hailo driver is no longer shipped with the ke
    ```
 
    Example output:
-   
+
    ```
    /lib/modules/6.6.31+rpt-rpi-2712/kernel/drivers/media/pci/hailo/hailo_pci.ko.xz
    ```
+
    Save the module path to a variable:
-   
+
    ```bash
    BUILTIN=$(modinfo -n hailo_pci)
    ```
 
    And rename the module by appending .bak:
-    
+
    ```bash
    sudo mv "$BUILTIN" "${BUILTIN}.bak"
    ```
-   
+
    Now refresh the kernel module map so the system recognizes the change:
-   
+
    ```bash
    sudo depmod -a
    ```
-   
+
    Reboot your Raspberry Pi:
 
    ```bash
@@ -185,7 +186,7 @@ On Raspberry Pi OS **Trixie**, the Hailo driver is no longer shipped with the ke
 
    This command should return no results.
 
-3. **Run the installation script**:
+2. **Run the installation script**:
 
    Download the installation script:
 
@@ -206,14 +207,13 @@ On Raspberry Pi OS **Trixie**, the Hailo driver is no longer shipped with the ke
    ```
 
    The script will:
-
    - Install necessary build dependencies
    - Clone and build the Hailo driver from the official repository
    - Install the driver
    - Download and install the required firmware
    - Set up udev rules
 
-4. **Reboot your system**:
+3. **Reboot your system**:
 
    After the script completes successfully, reboot to load the firmware:
 
@@ -221,7 +221,7 @@ On Raspberry Pi OS **Trixie**, the Hailo driver is no longer shipped with the ke
    sudo reboot
    ```
 
-5. **Verify the installation**:
+4. **Verify the installation**:
 
    After rebooting, verify that the Hailo device is available:
 
@@ -236,18 +236,18 @@ On Raspberry Pi OS **Trixie**, the Hailo driver is no longer shipped with the ke
    ```
 
    Verify the driver version:
-   
+
    ```bash
    cat /sys/module/hailo_pci/version
    ```
-   
+
    Verify that the firmware was installed correctly:
-   
+
    ```bash
    ls -l /lib/firmware/hailo/hailo8_fw.bin
    ```
 
-  **Optional: Fix PCIe descriptor page size error**
+   **Optional: Fix PCIe descriptor page size error**
 
    If you encounter the following error:
 
@@ -462,7 +462,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /path/to/your/config:/config
       - /path/to/your/storage:/media/frigate
-      - type: tmpfs # Recommended: 1GB of memory
+      - type: tmpfs # 1GB In-memory filesystem for recording segment storage
         target: /tmp/cache
         tmpfs:
           size: 1000000000
@@ -502,15 +502,15 @@ The official docker image tags for the current stable version are:
 
 - `stable` - Standard Frigate build for amd64 & RPi Optimized Frigate build for arm64. This build includes support for Hailo devices as well.
 - `stable-standard-arm64` - Standard Frigate build for arm64
-- `stable-tensorrt` - Frigate build specific for amd64 devices running an nvidia GPU
+- `stable-tensorrt` - Frigate build specific for amd64 devices running an Nvidia GPU
 - `stable-rocm` - Frigate build for [AMD GPUs](../configuration/object_detectors.md#amdrocm-gpu-detector)
 
 The community supported docker image tags for the current stable version are:
 
-- `stable-tensorrt-jp6` - Frigate build optimized for nvidia Jetson devices running Jetpack 6
+- `stable-tensorrt-jp6` - Frigate build optimized for Nvidia Jetson devices running Jetpack 6
 - `stable-rk` - Frigate build for SBCs with Rockchip SoC
 
-## Home Assistant Add-on
+## Home Assistant App
 
 :::warning
 
@@ -521,7 +521,7 @@ There are important limitations in HA OS to be aware of:
 - Separate local storage for media is not yet supported by Home Assistant
 - AMD GPUs are not supported because HA OS does not include the mesa driver.
 - Intel NPUs are not supported because HA OS does not include the NPU firmware.
-- Nvidia GPUs are not supported because addons do not support the nvidia runtime.
+- Nvidia GPUs are not supported because HA Apps do not support the Nvidia runtime.
 
 :::
 
@@ -531,27 +531,27 @@ See [the network storage guide](/guides/ha_network_storage.md) for instructions 
 
 :::
 
-Home Assistant OS users can install via the Add-on repository.
+Home Assistant OS users can install via the App repository.
 
-1. In Home Assistant, navigate to _Settings_ > _Add-ons_ > _Add-on Store_ > _Repositories_
+1. In Home Assistant, navigate to _Settings_ > _Apps_ > _App Store_ > _Repositories_
 2. Add `https://github.com/blakeblackshear/frigate-hass-addons`
-3. Install the desired variant of the Frigate Add-on (see below)
+3. Install the desired variant of the Frigate App (see below)
 4. Setup your network configuration in the `Configuration` tab
-5. Start the Add-on
+5. Start the App
 6. Use the _Open Web UI_ button to access the Frigate UI, then click in the _cog icon_ > _Configuration editor_ and configure Frigate to your liking
 
-There are several variants of the Add-on available:
+There are several variants of the App available:
 
-| Add-on Variant             | Description                                                |
+| App Variant                | Description                                                |
 | -------------------------- | ---------------------------------------------------------- |
 | Frigate                    | Current release with protection mode on                    |
 | Frigate (Full Access)      | Current release with the option to disable protection mode |
 | Frigate Beta               | Beta release with protection mode on                       |
 | Frigate Beta (Full Access) | Beta release with the option to disable protection mode    |
 
-If you are using hardware acceleration for ffmpeg, you **may** need to use the _Full Access_ variant of the Add-on. This is because the Frigate Add-on runs in a container with limited access to the host system. The _Full Access_ variant allows you to disable _Protection mode_ and give Frigate full access to the host system.
+If you are using hardware acceleration for ffmpeg, you **may** need to use the _Full Access_ variant of the App. This is because the Frigate App runs in a container with limited access to the host system. The _Full Access_ variant allows you to disable _Protection mode_ and give Frigate full access to the host system.
 
-You can also edit the Frigate configuration file through the [VS Code Add-on](https://github.com/hassio-addons/addon-vscode) or similar. In that case, the configuration file will be at `/addon_configs/<addon_directory>/config.yml`, where `<addon_directory>` is specific to the variant of the Frigate Add-on you are running. See the list of directories [here](../configuration/index.md#accessing-add-on-config-dir).
+You can also edit the Frigate configuration file through the [VS Code App](https://github.com/hassio-addons/addon-vscode) or similar. In that case, the configuration file will be at `/addon_configs/<addon_directory>/config.yml`, where `<addon_directory>` is specific to the variant of the Frigate App you are running. See the list of directories [here](../configuration/index.md#accessing-app-config-dir).
 
 ## Kubernetes
 
@@ -694,22 +694,23 @@ Log into QNAP, open Container Station. Frigate docker container should be listed
 
 :::warning
 
-macOS uses port 5000 for its Airplay Receiver service.  If you want to expose port 5000 in Frigate for local app and API access the port will need to be mapped to another port on the host e.g. 5001
+macOS uses port 5000 for its Airplay Receiver service. If you want to expose port 5000 in Frigate for local app and API access the port will need to be mapped to another port on the host e.g. 5001
 
 Failure to remap port 5000 on the host will result in the WebUI and all API endpoints on port 5000 being unreachable, even if port 5000 is exposed correctly in Docker.
 
 :::
 
-Docker containers on macOS can be orchestrated by either [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) or [OrbStack](https://orbstack.dev) (native swift app). The difference in inference speeds is negligable, however CPU, power consumption and container start times will be lower on OrbStack because it is a native Swift application. 
+Docker containers on macOS can be orchestrated by either [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) or [OrbStack](https://orbstack.dev) (native swift app). The difference in inference speeds is negligable, however CPU, power consumption and container start times will be lower on OrbStack because it is a native Swift application.
 
 To allow Frigate to use the Apple Silicon Neural Engine / Processing Unit (NPU) the host must be running [Apple Silicon Detector](../configuration/object_detectors.md#apple-silicon-detector) on the host (outside Docker)
 
 #### Docker Compose example
+
 ```yaml
 services:
   frigate:
     container_name: frigate
-    image: ghcr.io/blakeblackshear/frigate:stable-arm64
+    image: ghcr.io/blakeblackshear/frigate:stable-standard-arm64
     restart: unless-stopped
     shm_size: "512mb" # update for your cameras based on calculation above
     volumes:
@@ -719,7 +720,7 @@ services:
     ports:
       - "8971:8971"
       # If exposing on macOS map to a diffent host port like 5001 or any orher port with no conflicts
-      # - "5001:5000" # Internal unauthenticated access. Expose carefully. 
+      # - "5001:5000" # Internal unauthenticated access. Expose carefully.
       - "8554:8554" # RTSP feeds
     extra_hosts:
       # This is very important
