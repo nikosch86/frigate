@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Optional, Union
 
 from pydantic import Field, field_validator, model_validator
 
@@ -18,63 +17,81 @@ class ZoomingModeEnum(str, Enum):
 
 
 class PtzAutotrackConfig(FrigateBaseModel):
-    enabled: bool = Field(default=False, title="Enable PTZ object autotracking.")
+    enabled: bool = Field(
+        default=False,
+        title="Enable Autotracking",
+        description="Enable or disable automatic PTZ camera tracking of detected objects.",
+    )
     calibrate_on_startup: bool = Field(
-        default=False, title="Perform a camera calibration when Frigate starts."
+        default=False,
+        title="Calibrate on start",
+        description="Measure PTZ motor speeds on startup to improve tracking accuracy. Frigate will update config with movement_weights after calibration.",
     )
     zooming: ZoomingModeEnum = Field(
         default=ZoomingModeEnum.disabled,
-        title="Autotracker zooming mode.",
-        description="disabled: no zooming, absolute: position-based zoom, relative: concurrent zoom with pan/tilt, continuous: velocity-based zoom for cameras without position control"
+        title="Zoom mode",
+        description="Control zoom behavior: disabled (pan/tilt only), absolute (most compatible), relative (concurrent pan/tilt/zoom), or continuous (velocity-based zoom for cameras without position control).",
     )
     zoom_factor: float = Field(
         default=0.3,
-        title="Zooming factor (0.1-0.75).",
+        title="Zoom factor",
+        description="Control zoom level on tracked objects. Lower values keep more scene in view; higher values zoom in closer but may lose tracking. Values between 0.1 and 0.75.",
         ge=0.1,
         le=0.75,
     )
-    track: list[str] = Field(default=DEFAULT_TRACKED_OBJECTS, title="Objects to track.")
+    track: list[str] = Field(
+        default=DEFAULT_TRACKED_OBJECTS,
+        title="Tracked objects",
+        description="List of object types that should trigger autotracking.",
+    )
     required_zones: list[str] = Field(
         default_factory=list,
-        title="List of required zones to be entered in order to begin autotracking.",
+        title="Required zones",
+        description="Objects must enter one of these zones before autotracking begins.",
     )
     return_preset: str = Field(
         default="home",
-        title="Name of camera preset to return to when object tracking is over.",
+        title="Return preset",
+        description="ONVIF preset name configured in camera firmware to return to after tracking ends.",
     )
     timeout: int = Field(
-        default=10, title="Seconds to delay before returning to preset."
+        default=10,
+        title="Return timeout",
+        description="Wait this many seconds after losing tracking before returning camera to preset position.",
     )
     continuous_speed: float = Field(
         default=2.0,
-        title="Movement speed for ContinuousMove PTZ cameras (FOV units/sec).",
-        description="How many FOV units the camera traverses per second at velocity=1.0. Higher values mean faster movement. Typical range: 0.5-4.0",
+        title="Continuous move speed",
+        description="FOV units the camera traverses per second at velocity 1.0 for ContinuousMove PTZ cameras. Higher values mean faster movement. Typical range: 0.5-4.0.",
         ge=0.1,
         le=10.0,
     )
     continuous_zoom_speed: float = Field(
         default=1.0,
-        title="Zoom speed for ContinuousMove PTZ cameras (zoom units/sec).",
-        description="How fast the camera zooms at velocity=1.0. Lower values mean slower, more precise zoom. Typical range: 0.5-2.0",
+        title="Continuous zoom speed",
+        description="Zoom units per second at velocity 1.0 for ContinuousMove PTZ cameras. Lower values mean slower, more precise zoom. Typical range: 0.5-2.0.",
         ge=0.1,
         le=5.0,
     )
-    assumed_zoom_range: Optional[tuple[float, float]] = Field(
+    assumed_zoom_range: tuple[float, float] | None = Field(
         default=None,
-        title="Camera's zoom range in native units (e.g., optical zoom multiplier).",
-        description="For cameras that don't report zoom position, specify the zoom range in the camera's native units as shown on OSD. Example: [1, 30] for a 30x optical zoom camera, or [1, 20] if camera can only reach 20x.",
+        title="Assumed zoom range",
+        description="Zoom range in the camera's native units (as shown on the OSD) for cameras that do not report zoom position. Example: [1, 30] for a 30x optical zoom camera.",
     )
-    preset_zoom_level: Optional[float] = Field(
+    preset_zoom_level: float | None = Field(
         default=None,
-        title="Zoom level at the return preset in native units.",
-        description="For cameras that don't report zoom level, specify the zoom level at your preset position in the camera's native units (as shown on OSD). Example: 10 for a preset at 10x optical zoom, or 5.5 for 5.5x zoom.",
+        title="Preset zoom level",
+        description="Zoom level at the return preset in the camera's native units, for cameras that do not report zoom position. Example: 10 for a preset at 10x optical zoom.",
     )
-    movement_weights: Optional[Union[str, list[str]]] = Field(
+    movement_weights: str | list[str] | None = Field(
         default_factory=list,
-        title="Internal value used for PTZ movements based on the speed of your camera's motor.",
+        title="Movement weights",
+        description="Calibration values automatically generated by camera calibration. Do not modify manually.",
     )
-    enabled_in_config: Optional[bool] = Field(
-        default=None, title="Keep track of original state of autotracking."
+    enabled_in_config: bool | None = Field(
+        default=None,
+        title="Original autotrack state",
+        description="Internal field to track whether autotracking was enabled in configuration.",
     )
 
     @field_validator("assumed_zoom_range", mode="before")
@@ -89,11 +106,15 @@ class PtzAutotrackConfig(FrigateBaseModel):
                 if min_val > 0 and min_val < max_val:
                     return (float(min_val), float(max_val))
                 else:
-                    raise ValueError("assumed_zoom_range values must be positive with min < max (e.g., [1, 30] for 1x-30x zoom)")
+                    raise ValueError(
+                        "assumed_zoom_range values must be positive with min < max (e.g., [1, 30] for 1x-30x zoom)"
+                    )
 
-        raise ValueError("assumed_zoom_range must be a tuple of two numbers representing min and max zoom in camera units")
+        raise ValueError(
+            "assumed_zoom_range must be a tuple of two numbers representing min and max zoom in camera units"
+        )
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_preset_within_range(self):
         """Validate that preset_zoom_level is within assumed_zoom_range if both are set."""
         if self.preset_zoom_level is not None and self.assumed_zoom_range is not None:
@@ -127,20 +148,48 @@ class PtzAutotrackConfig(FrigateBaseModel):
 
 
 class OnvifConfig(FrigateBaseModel):
-    host: EnvString = Field(default="", title="Onvif Host")
-    port: int = Field(default=8000, title="Onvif Port")
-    user: Optional[EnvString] = Field(default=None, title="Onvif Username")
-    password: Optional[EnvString] = Field(default=None, title="Onvif Password")
-    tls_insecure: bool = Field(default=False, title="Onvif Disable TLS verification")
+    host: EnvString = Field(
+        default="",
+        title="ONVIF host",
+        description="Host (and optional scheme) for the ONVIF service for this camera.",
+    )
+    port: int = Field(
+        default=8000,
+        title="ONVIF port",
+        description="Port number for the ONVIF service.",
+    )
+    user: EnvString | None = Field(
+        default=None,
+        title="ONVIF username",
+        description="Username for ONVIF authentication; some devices require admin user for ONVIF.",
+    )
+    password: EnvString | None = Field(
+        default=None,
+        title="ONVIF password",
+        description="Password for ONVIF authentication.",
+    )
+    tls_insecure: bool = Field(
+        default=False,
+        title="Disable TLS verify",
+        description="Skip TLS verification and disable digest auth for ONVIF (unsafe; use in safe networks only).",
+    )
+    profile: str | None = Field(
+        default=None,
+        title="ONVIF profile",
+        description="Specific ONVIF media profile to use for PTZ control, matched by token or name. If not set, the first profile with valid PTZ configuration is selected automatically.",
+    )
     autotracking: PtzAutotrackConfig = Field(
         default_factory=PtzAutotrackConfig,
-        title="PTZ auto tracking config.",
+        title="Autotracking",
+        description="Automatically track moving objects and keep them centered in the frame using PTZ camera movements.",
     )
     ignore_time_mismatch: bool = Field(
         default=False,
-        title="Onvif Ignore Time Synchronization Mismatch Between Camera and Server",
+        title="Ignore time mismatch",
+        description="Ignore time synchronization differences between camera and Frigate server for ONVIF communication.",
     )
     sunba_quirks: bool = Field(
         default=False,
-        title="Enable Sunba camera compatibility workarounds for broken PTZ implementation",
+        title="Sunba quirks",
+        description="Enable Sunba camera compatibility workarounds for its broken PTZ implementation (swapped pan/tilt speeds, unreliable move status, separate zoom commands).",
     )
