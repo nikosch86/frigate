@@ -73,8 +73,10 @@ class PtzAutotrackConfig(FrigateBaseModel):
         ge=0.1,
         le=5.0,
     )
-    assumed_zoom_range: tuple[float, float] | None = Field(
+    assumed_zoom_range: list[float] | None = Field(
         default=None,
+        min_length=2,
+        max_length=2,
         title="Assumed zoom range",
         description="Zoom range in the camera's native units (as shown on the OSD) for cameras that do not report zoom position. Example: [1, 30] for a 30x optical zoom camera.",
     )
@@ -104,14 +106,14 @@ class PtzAutotrackConfig(FrigateBaseModel):
             min_val, max_val = v
             if isinstance(min_val, (int, float)) and isinstance(max_val, (int, float)):
                 if min_val > 0 and min_val < max_val:
-                    return (float(min_val), float(max_val))
+                    return [float(min_val), float(max_val)]
                 else:
                     raise ValueError(
                         "assumed_zoom_range values must be positive with min < max (e.g., [1, 30] for 1x-30x zoom)"
                     )
 
         raise ValueError(
-            "assumed_zoom_range must be a tuple of two numbers representing min and max zoom in camera units"
+            "assumed_zoom_range must be a list of two numbers representing min and max zoom in camera units"
         )
 
     @model_validator(mode="after")
