@@ -553,7 +553,6 @@ class PtzAutoTracker:
 
         min_native, max_native = self.native_zoom_range[camera]
 
-        # Convert to 0.0-1.0 range
         # Linear mapping: native_min -> 0.0, native_max -> 1.0
         normalized = (native_zoom - min_native) / (max_native - min_native)
         return np.clip(normalized, 0.0, 1.0)
@@ -566,7 +565,6 @@ class PtzAutoTracker:
 
         min_native, max_native = self.native_zoom_range[camera]
 
-        # Convert from 0.0-1.0 to native range
         native = min_native + (normalized_zoom * (max_native - min_native))
         return native
 
@@ -870,9 +868,8 @@ class PtzAutoTracker:
     ) -> tuple[float, float, float]:
         """Calculate velocity and duration for ContinuousMove based on FOV delta.
 
-        For cameras using continuous_timed mode, this converts a desired position
-        change (in normalized FOV coordinates) into velocity and duration parameters
-        for ContinuousMove.
+        Converts a desired position change in normalized FOV coordinates into
+        velocity and duration parameters for continuous_timed cameras.
         """
         speed = self.continuous_speed[camera]
 
@@ -925,9 +922,8 @@ class PtzAutoTracker:
     ) -> tuple[float, float]:
         """Calculate velocity and duration for continuous zoom based on zoom delta.
 
-        For cameras using continuous_timed mode with continuous zoom capability,
-        this converts a desired zoom change into velocity and duration parameters
-        for ContinuousZoom.
+        Converts a desired normalized zoom change into velocity and duration
+        parameters for continuous_timed cameras with zoom support.
         """
         zoom_speed = self.continuous_zoom_speed[camera]
 
@@ -1487,10 +1483,9 @@ class PtzAutoTracker:
         # larger objects should lower the threshold, smaller objects should raise it
         scaling_factor = 1 - np.log(max_obj / max_frame)
 
-        # Dampen scaling for ContinuousMove - the original range is too wide,
-        # causing huge thresholds for small/far objects that lead to delayed
-        # responses and large corrections ContinuousMove can't execute precisely.
-        # Dampening preserves size relationship: large objects still get tighter thresholds.
+        # Dampen scaling for ContinuousMove: the full log range gives small/far
+        # objects thresholds so large that corrections come late and too big to
+        # execute precisely. Large objects still get tighter thresholds.
         if self.movement_mode.get(camera) == "continuous_timed":
             scaling_factor = 1 + (scaling_factor - 1) * 0.6
 
@@ -1707,11 +1702,9 @@ class PtzAutoTracker:
             _, _, duration = self._calculate_continuous_move_params(camera, pan, tilt)
             predicted_movement_time = duration
 
-            # Ramp prediction strength with distance from center.
-            # Zero at center (prevents hunting for stationary objects),
-            # full prediction at ramp_distance+.
-            # Larger objects get faster ramp (lower ramp_distance) because
-            # they exit the frame faster and need earlier prediction.
+            # Ramp prediction from zero at center (avoids hunting on stationary
+            # objects) to full at ramp_distance. Larger objects ramp sooner
+            # because they exit the frame faster.
             effective_distance = np.sqrt(pan**2 + tilt**2)
             obj_width = obj.obj_data["box"][2] - obj.obj_data["box"][0]
             obj_height = obj.obj_data["box"][3] - obj.obj_data["box"][1]
@@ -2002,12 +1995,9 @@ class PtzAutoTracker:
                     self.ptz_metrics[camera].start_time.value,
                     self.ptz_metrics[camera].stop_time.value,
                 ):
-                    # For ContinuousMove, wait for pipeline to deliver fresh
-                    # post-move frames before making new corrections.
-                    # Frames arriving too soon after stop_time were captured
-                    # before/during the move and show stale object positions.
-                    # Reduce settling when object is near frame edge to avoid
-                    # losing tracking of fast-moving close objects.
+                    # For ContinuousMove, frames arriving right after stop_time were
+                    # captured during the move and show stale positions, so settle
+                    # before correcting. Settle less near the frame edge to keep tracking.
                     stop_time = self.ptz_metrics[camera].stop_time.value
                     if (
                         self.movement_mode.get(camera) == "continuous_timed"

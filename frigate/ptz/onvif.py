@@ -608,9 +608,8 @@ class OnvifController:
     ) -> tuple[float, float]:
         """Apply Sunba speed reversal workaround.
 
-        Sunba cameras have a bug where if pan and tilt velocities differ,
-        the MAGNITUDES (speeds) are swapped while directions are preserved.
-        We pre-swap them so the camera's bug results in correct movement.
+        Sunba firmware swaps the pan and tilt magnitudes when they differ, keeping
+        directions. Pre-swapping them makes the camera move as intended.
         """
         if not self.cams[camera_name].get("sunba_quirks", False):
             return pan_velocity, tilt_velocity
@@ -773,9 +772,8 @@ class OnvifController:
     ) -> None:
         """Move PTZ using ContinuousMove with timed stop for autotracking.
 
-        This method is used for cameras that support ContinuousMove but not
-        RelativeMove with FOV coordinates. It moves at a given velocity for
-        a calculated duration to achieve the desired position change.
+        For cameras without FOV RelativeMove: moves at the given velocity for
+        a calculated duration to reach the desired position change.
         """
         if "pt" not in self.cams[camera_name]["features"]:
             logger.error(f"{camera_name} does not support ONVIF ContinuousMove.")
