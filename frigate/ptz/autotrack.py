@@ -733,12 +733,12 @@ class PtzAutoTracker:
 
                     zoom_in_values.append(self.ptz_metrics[camera].zoom_level.value)
 
-            self.ptz_metrics[camera].max_zoom.value = max(zoom_in_values)
-            self.ptz_metrics[camera].min_zoom.value = min(zoom_out_values)
+                self.ptz_metrics[camera].max_zoom.value = max(zoom_in_values)
+                self.ptz_metrics[camera].min_zoom.value = min(zoom_out_values)
 
-            logger.debug(
-                f"{camera}: Calibration values: max zoom: {self.ptz_metrics[camera].max_zoom.value}, min zoom: {self.ptz_metrics[camera].min_zoom.value}, zoom time: {self.zoom_time[camera]}"
-            )
+                logger.debug(
+                    f"{camera}: Calibration values: max zoom: {self.ptz_metrics[camera].max_zoom.value}, min zoom: {self.ptz_metrics[camera].min_zoom.value}, zoom time: {self.zoom_time[camera]}"
+                )
 
         else:
             self.ptz_metrics[camera].max_zoom.value = 1

@@ -846,7 +846,7 @@ class Dispatcher:
 
             if "set_return_preset" in preset:
                 command = OnvifCommandEnum.set_return_preset
-                param = payload.lower()[payload.index("_") + 1 :]
+                param = preset[preset.index("_") + 1 :]
             elif "preset" in preset:
                 command = OnvifCommandEnum.preset
                 param = preset[preset.index("_") + 1 :]
