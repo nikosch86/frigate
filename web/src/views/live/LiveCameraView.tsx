@@ -92,7 +92,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { useSessionPersistence } from "@/hooks/use-session-persistence";
-import { capitalizeAll } from "@/utils/stringUtil";
+import { useCameraFriendlyName } from "@/hooks/use-camera-friendly-name";
 
 import {
   Select,
@@ -194,6 +194,7 @@ export default function LiveCameraView({
 
   // camera enabled state
   const { payload: enabledState } = useEnabledState(camera.name);
+  const cameraFriendlyName = useCameraFriendlyName(camera);
   const cameraEnabled = enabledState === "ON";
 
   // for audio transcriptions
@@ -582,7 +583,9 @@ export default function LiveCameraView({
                 </Button>
               </div>
               <div className="absolute left-1/2 -translate-x-1/2">
-                <div className="text-primary">{capitalizeAll(camera.name)}</div>
+                <div className="capitalize text-primary">
+                  {cameraFriendlyName}
+                </div>
               </div>
             </>
           ) : (
