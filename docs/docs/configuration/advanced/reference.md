@@ -1013,6 +1013,9 @@ cameras:
       # If not set, the first profile with valid PTZ configuration is selected automatically.
       # Use this when your camera has multiple ONVIF profiles and you need to select a specific one.
       profile: None
+      # Optional: Enable workarounds for Sunba PTZ firmware bugs (default: shown below)
+      # Swaps mismatched pan/tilt speeds, sends zoom separately from pan/tilt and does not rely on move status.
+      sunba_quirks: False
       # Optional: PTZ camera object autotracking. Keeps a moving object in
       # the center of the frame by automatically moving the PTZ camera.
       autotracking:
@@ -1025,10 +1028,11 @@ cameras:
         # a "movement_weights" entry for the camera. You should then set calibrate_on_startup to False.
         calibrate_on_startup: False
         # Optional: the mode to use for zooming in/out on objects during autotracking. (default: shown below)
-        # Available options are: disabled, absolute, and relative
+        # Available options are: disabled, absolute, relative, and continuous
         #   disabled - don't zoom in/out on autotracked objects, use pan/tilt only
         #   absolute - use absolute zooming (supported by most PTZ capable cameras)
         #   relative - use relative zooming (not supported on all PTZs, but makes concurrent pan/tilt/zoom movements)
+        #   continuous - use timed velocity zooming for cameras without absolute or relative zoom support
         zooming: disabled
         # Optional: A value to change the behavior of zooming on autotracked objects. (default: shown below)
         # A lower value will keep more of the scene in view around a tracked object.
@@ -1045,6 +1049,17 @@ cameras:
         return_preset: home
         # Optional: Seconds to delay before returning to preset. (default: shown below)
         timeout: 10
+        # Optional: Pan/tilt speed in field-of-view units per second at velocity 1.0. (default: shown below)
+        # Only used for cameras without FOV RelativeMove support, which are tracked with timed ContinuousMove commands.
+        continuous_speed: 2.0
+        # Optional: Zoom speed in zoom units per second at velocity 1.0 for continuous zooming. (default: shown below)
+        continuous_zoom_speed: 1.0
+        # Optional: Zoom range in the camera's native units (as shown on its OSD) for cameras that do not report zoom position.
+        # Example: [1, 30] for a 30x optical zoom camera. (default: 1x to 30x is assumed when unset)
+        assumed_zoom_range: None
+        # Optional: Zoom level at the return preset in the camera's native units, for cameras that do not report zoom position.
+        # Must lie within assumed_zoom_range. (default: the middle of the zoom range is assumed when unset)
+        preset_zoom_level: None
         # Optional: Values generated automatically by a camera calibration. Do not modify these manually. (default: shown below)
         movement_weights: []
 

@@ -24,7 +24,7 @@ When tracking has ended, Frigate will return to the camera firmware's PTZ preset
 
 Frigate autotracking functions with PTZ cameras capable of relative movement within the field of view (as specified in the [ONVIF spec](https://www.onvif.org/specs/srv/ptz/ONVIF-PTZ-Service-Spec-v1712.pdf) as `RelativePanTiltTranslationSpace` having a `TranslationSpaceFov` entry).
 
-Many cheaper or older PTZs may not support this standard. Frigate will report an error message in the log and disable autotracking if your PTZ is unsupported.
+Many cheaper or older PTZs do not support this standard but do support `ContinuousMove`, which is what the manual PTZ controls use. This fork autotracks such cameras with timed `ContinuousMove` commands: the distance to the tracked object is converted into a movement duration using `continuous_speed`. Position is estimated from timing, so small drift can accumulate during a tracking session; it is corrected each time the camera returns to `return_preset`. Frigate logs which movement mode is in use at startup and disables autotracking only if neither mode is supported.
 
 The FeatureList on the [ONVIF Conformant Products Database](https://www.onvif.org/conformant-products/) can provide a starting point to determine a camera's compatibility with Frigate's autotracking. Look to see if a camera lists `PTZRelative`, `PTZRelativePanTilt` and/or `PTZRelativeZoom`. These features are required for autotracking, but some cameras still fail to respond even if they claim support.
 
@@ -55,19 +55,24 @@ Navigate to <NavPath path="Settings > Camera configuration > ONVIF" /> for the d
 | **ONVIF password**     | Password for login                                                                                                                                          |
 | **Disable TLS verify** | Skip TLS verification and disable digest auth for ONVIF (default: false)                                                                                    |
 | **ONVIF profile**      | ONVIF media profile to use for PTZ control, matched by token or name. If not set, the first profile with valid PTZ configuration is selected automatically. |
+| **Sunba quirks**       | Enable workarounds for Sunba PTZ firmware bugs: swapped pan/tilt speeds, separate zoom commands, unreliable move status (default: false)                    |
 
 **Autotracking**
 
-| Field                   | Description                                                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Enable Autotracking** | Enable or disable object autotracking (default: false)                                                                               |
-| **Calibrate on start**  | Calibrate the camera on startup by measuring PTZ motor speed (default: false)                                                        |
-| **Zoom mode**           | Zoom mode during autotracking: `disabled`, `absolute`, or `relative` (default: disabled)                                             |
-| **Zoom Factor**         | Controls zoom behavior on tracked objects, between 0.1 and 0.75. Lower keeps more scene visible; higher zooms in more (default: 0.3) |
-| **Tracked objects**     | List of object types to track (default: person)                                                                                      |
-| **Required Zones**      | Zones an object must enter to begin autotracking                                                                                     |
-| **Return Preset**       | Name of ONVIF preset in camera firmware to return to when tracking ends (default: home)                                              |
-| **Return timeout**      | Seconds to delay before returning to preset (default: 10)                                                                            |
+| Field                     | Description                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Enable Autotracking**   | Enable or disable object autotracking (default: false)                                                                               |
+| **Calibrate on start**    | Calibrate the camera on startup by measuring PTZ motor speed (default: false)                                                        |
+| **Zoom mode**             | Zoom mode during autotracking: `disabled`, `absolute`, `relative`, or `continuous` (default: disabled)                               |
+| **Zoom Factor**           | Controls zoom behavior on tracked objects, between 0.1 and 0.75. Lower keeps more scene visible; higher zooms in more (default: 0.3) |
+| **Tracked objects**       | List of object types to track (default: person)                                                                                      |
+| **Required Zones**        | Zones an object must enter to begin autotracking                                                                                     |
+| **Return Preset**         | Name of ONVIF preset in camera firmware to return to when tracking ends (default: home)                                              |
+| **Return timeout**        | Seconds to delay before returning to preset (default: 10)                                                                            |
+| **Continuous move speed** | Pan/tilt speed in FOV units per second at velocity 1.0, used for cameras without FOV RelativeMove support (default: 2.0)             |
+| **Continuous zoom speed** | Zoom speed in zoom units per second at velocity 1.0 for continuous zooming (default: 1.0)                                            |
+| **Assumed zoom range**    | Native zoom range, e.g. `[1, 30]`, for cameras that do not report zoom position (default: unset, 1x to 30x assumed)                  |
+| **Preset zoom level**     | Native zoom level at the return preset for cameras that do not report zoom position (default: unset, middle of the range assumed)    |
 
 </TabItem>
 <TabItem value="yaml">
@@ -93,6 +98,9 @@ cameras:
       # If not set, the first profile with valid PTZ configuration is selected automatically.
       # Use this when your camera has multiple ONVIF profiles and you need to select a specific one.
       profile: None
+      # Optional: Enable workarounds for Sunba PTZ firmware bugs (default: shown below)
+      # Swaps mismatched pan/tilt speeds, sends zoom separately from pan/tilt and does not rely on move status.
+      sunba_quirks: False
       # Optional: PTZ camera object autotracking. Keeps a moving object in
       # the center of the frame by automatically moving the PTZ camera.
       autotracking:
@@ -105,10 +113,11 @@ cameras:
         # a "movement_weights" entry for the camera. You should then set calibrate_on_startup to False.
         calibrate_on_startup: False
         # Optional: the mode to use for zooming in/out on objects during autotracking. (default: shown below)
-        # Available options are: disabled, absolute, and relative
+        # Available options are: disabled, absolute, relative, and continuous
         #   disabled - don't zoom in/out on autotracked objects, use pan/tilt only
         #   absolute - use absolute zooming (supported by most PTZ capable cameras)
         #   relative - use relative zooming (not supported on all PTZs, but makes concurrent pan/tilt/zoom movements)
+        #   continuous - use timed velocity zooming for cameras without absolute or relative zoom support
         zooming: disabled
         # Optional: A value to change the behavior of zooming on autotracked objects. (default: shown below)
         # A lower value will keep more of the scene in view around a tracked object.
@@ -125,6 +134,17 @@ cameras:
         return_preset: home
         # Optional: Seconds to delay before returning to preset. (default: shown below)
         timeout: 10
+        # Optional: Pan/tilt speed in field-of-view units per second at velocity 1.0. (default: shown below)
+        # Only used for cameras without FOV RelativeMove support, which are tracked with timed ContinuousMove commands.
+        continuous_speed: 2.0
+        # Optional: Zoom speed in zoom units per second at velocity 1.0 for continuous zooming. (default: shown below)
+        continuous_zoom_speed: 1.0
+        # Optional: Zoom range in the camera's native units (as shown on its OSD) for cameras that do not report zoom position.
+        # Example: [1, 30] for a 30x optical zoom camera. (default: 1x to 30x is assumed when unset)
+        assumed_zoom_range: None
+        # Optional: Zoom level at the return preset in the camera's native units, for cameras that do not report zoom position.
+        # Must lie within assumed_zoom_range. (default: the middle of the zoom range is assumed when unset)
+        preset_zoom_level: None
         # Optional: Values generated automatically by a camera calibration. Do not modify these manually. (default: shown below)
         movement_weights: []
 ```
@@ -177,6 +197,8 @@ Zooming is a very experimental feature and may use significantly more CPU when t
 Absolute zooming makes zoom movements separate from pan/tilt movements. Most PTZ cameras will support absolute zooming. Absolute zooming was developed to be very conservative to work best with a variety of cameras and scenes. Absolute zooming usually will not occur until an object has stopped moving or is moving very slowly.
 
 Relative zooming attempts to make a zoom movement concurrently with any pan/tilt movements. It was tested to work with some Dahua and Amcrest PTZs. But the ONVIF specification indicates that there no assumption about how the generic zoom range is mapped to magnification, field of view or other physical zoom dimension when using relative zooming. So if relative zooming behavior is erratic or just doesn't work, try absolute zooming.
+
+Continuous zooming is for cameras that support neither absolute nor relative zoom but do offer `ContinuousMove` zooming. The zoom motor runs at a fixed velocity for a duration derived from `continuous_zoom_speed`. Because such cameras usually do not report their zoom position, Frigate estimates it from timing; set `assumed_zoom_range` and `preset_zoom_level` to your camera's native values so the estimate starts and stays accurate.
 
 You can optionally adjust the `zoom_factor` for your camera in your configuration file. Lower values will leave more space from the scene around the tracked object while higher values will cause your camera to zoom in more on the object. However, keep in mind that Frigate needs a fair amount of pixels and scene details outside of the bounding box of the tracked object to estimate the motion of your camera. If the object is taking up too much of the frame, Frigate will not be able to track the motion of the camera and your object will be lost.
 
