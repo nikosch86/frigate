@@ -621,11 +621,13 @@ export function RecordingView({
           {isMobile && (
             <Logo className="absolute inset-x-1/2 h-8 -translate-x-1/2" />
           )}
-          <div className="absolute left-1/2 -translate-x-1/2">
-            <div className="capitalize text-primary">
-              {mainCameraFriendlyName}
+          {isDesktop && (
+            <div className="absolute left-1/2 -translate-x-1/2">
+              <div className="capitalize text-primary">
+                {mainCameraFriendlyName}
+              </div>
             </div>
-          </div>
+          )}
           <div className={cn("flex items-center gap-2")}>
             <Button
               className="flex items-center gap-2.5 rounded-lg"
