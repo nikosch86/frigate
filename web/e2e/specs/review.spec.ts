@@ -80,7 +80,7 @@ test.describe("Review — filters (desktop) @critical", () => {
     await expect(review.camerasFilterTrigger).toBeVisible({ timeout: 5_000 });
     await review.camerasFilterTrigger.click();
     await expect(review.filterOverlay).toBeVisible({ timeout: 3_000 });
-    await expect(frigateApp.page.getByText("Front Door")).toBeVisible();
+    await expect(review.filterOverlay.getByText("Front Door")).toBeVisible();
   });
 
   test("closing the Cameras popover with Escape leaves body interactive", async ({
