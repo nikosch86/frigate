@@ -72,7 +72,7 @@ These settings are saved per group and per device in your browser, not in your c
 
 ## The single-camera view
 
-Clicking a camera tile opens its full-resolution single-camera view. The top bar provides:
+Clicking a camera tile opens its full-resolution single-camera view. The camera's name is shown in the center of the top bar, which also provides:
 
 - **Back** (also the `Esc` key) to return to the dashboard,
 - **History** to jump to the [recordings](/usage/history) for this camera, starting about 30 seconds in the past,

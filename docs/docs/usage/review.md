@@ -33,7 +33,7 @@ The **Alerts** and **Detections** tabs show a count next to their label. With **
 
 ## Marking items as reviewed
 
-Review items are shown as a grid of thumbnail cards next to a vertical activity timeline. Hovering a card (desktop) or swiping to the right (mobile) plays a short preview inline.
+Review items are shown as a grid of thumbnail cards next to a vertical activity timeline. Hovering a card (desktop) or swiping to the right (mobile) plays a short preview inline. Each card is labeled with the name of its camera in the top-left corner.
 
 - **Clicking** a card opens its recording in [History](/usage/history) and marks the item as reviewed.
 - The object chip on each card is **gray** when the item is unreviewed and turns **green** once it has been reviewed.
