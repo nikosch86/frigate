@@ -19,6 +19,8 @@ You can open History from several places:
 
 Use the **Back** button to return where you came from, or the **Live** button to jump to the current camera's live view.
 
+On desktop, the name of the selected camera is shown in the center of the top bar. On mobile, the camera drawer in the top bar shows and switches the camera instead.
+
 :::tip
 
 If you see **"No recordings found for this time"**, the most common causes are: recording was not enabled for that camera at the time of the event; the retention window has since expired and those segments were removed; or storage ran low and Frigate deleted them early to free space. See [Recording](/configuration/record) to verify your retention settings.
