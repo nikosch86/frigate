@@ -20,7 +20,7 @@ import ImageLoadingIndicator from "../indicators/ImageLoadingIndicator";
 import useContextMenu from "@/hooks/use-contextmenu";
 import ActivityIndicator from "../indicators/activity-indicator";
 import { TimeRange } from "@/types/timeline";
-import { capitalizeAll } from "@/utils/stringUtil";
+import { resolveCameraName } from "@/hooks/use-camera-friendly-name";
 import { cn } from "@/lib/utils";
 import { InProgressPreview, VideoPreview } from "../preview/ScrubbablePreview";
 import { Preview } from "@/types/preview";
@@ -255,8 +255,8 @@ export default function PreviewThumbnailPlayer({
             !isSafari && "z-40",
           )}
         >
-          <div className="mx-3 mb-1 text-xs font-medium text-white">
-            {capitalizeAll(review.camera)}
+          <div className="mx-3 mb-1 text-xs font-medium capitalize text-white">
+            {resolveCameraName(config, review.camera)}
           </div>
           <Tooltip>
             <div

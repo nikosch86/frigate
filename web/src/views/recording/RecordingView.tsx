@@ -66,7 +66,7 @@ import { useTimezone } from "@/hooks/use-date-utils";
 import { useTimelineZoom } from "@/hooks/use-timeline-zoom";
 import { useTranslation } from "react-i18next";
 import { useTimelineUtils } from "@/hooks/use-timeline-utils";
-import { capitalizeAll } from "@/utils/stringUtil";
+import { useCameraFriendlyName } from "@/hooks/use-camera-friendly-name";
 import {
   Tooltip,
   TooltipContent,
@@ -133,6 +133,7 @@ export function RecordingView({
     [allCameras, allowedCameras, config?.cameras],
   );
   const [mainCamera, setMainCamera] = useState(startCamera);
+  const mainCameraFriendlyName = useCameraFriendlyName(mainCamera);
 
   const { data: recordingsSummary } = useSWR<RecordingsSummary>([
     "recordings/summary",
@@ -621,7 +622,9 @@ export function RecordingView({
             <Logo className="absolute inset-x-1/2 h-8 -translate-x-1/2" />
           )}
           <div className="absolute left-1/2 -translate-x-1/2">
-            <div className="text-primary">{capitalizeAll(mainCamera)}</div>
+            <div className="capitalize text-primary">
+              {mainCameraFriendlyName}
+            </div>
           </div>
           <div className={cn("flex items-center gap-2")}>
             <Button
