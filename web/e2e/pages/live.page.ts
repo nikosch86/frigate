@@ -29,6 +29,18 @@ export class LivePage extends BasePage {
     return this.page.getByText("History", { exact: true });
   }
 
+  /** The single-camera view header row (Back/History buttons + title). */
+  get singleCameraHeader(): Locator {
+    return this.page
+      .locator("div.h-12")
+      .filter({ has: this.page.getByRole("button", { name: "Go back" }) });
+  }
+
+  /** The centered camera friendly-name label in the single-camera header. */
+  get singleCameraHeaderName(): Locator {
+    return this.singleCameraHeader.locator(".capitalize");
+  }
+
   /** All CameraFeatureToggle elements (active + inactive). */
   get featureToggles(): Locator {
     // Use div selector to exclude NavItem anchor elements that share the same classes.

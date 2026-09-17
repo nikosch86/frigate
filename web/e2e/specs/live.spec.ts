@@ -51,6 +51,30 @@ test.describe("Live Dashboard @critical", () => {
   });
 });
 
+test.describe("Live Single Camera — header camera name @critical @mobile", () => {
+  test("single-camera header shows the camera friendly name", async ({
+    frigateApp,
+  }) => {
+    await frigateApp.goto("/#front_door");
+    const live = new LivePage(frigateApp.page, !frigateApp.isMobile);
+    await expect(live.singleCameraHeader).toBeVisible({ timeout: 10_000 });
+    await expect(live.singleCameraHeaderName).toHaveText("Front Door");
+  });
+
+  test("header falls back to the camera id when no friendly name is set", async ({
+    frigateApp,
+  }) => {
+    await frigateApp.installDefaults({
+      config: { cameras: { front_door: { friendly_name: "" } } },
+    });
+    await frigateApp.goto("/#front_door");
+    const live = new LivePage(frigateApp.page, !frigateApp.isMobile);
+    await expect(live.singleCameraHeader).toBeVisible({ timeout: 10_000 });
+    // resolveCameraName swaps underscores for spaces; CSS capitalizes it.
+    await expect(live.singleCameraHeaderName).toHaveText("front door");
+  });
+});
+
 test.describe("Live Single Camera — desktop controls @critical", () => {
   test.skip(
     ({ frigateApp }) => frigateApp.isMobile,
