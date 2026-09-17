@@ -41,6 +41,27 @@ export class ReviewPage extends BasePage {
     return this.page.locator(".review-item");
   }
 
+  /** Review-list thumbnails carrying the given camera friendly name. */
+  thumbnailsLabelled(cameraName: string): Locator {
+    return this.reviewItems.filter({
+      has: this.page.getByText(cameraName, { exact: true }),
+    });
+  }
+
+  /** The recording view header row (Back/Live buttons + title or logo). */
+  get recordingHeader(): Locator {
+    return this.page.locator("div.h-11").filter({
+      has: this.page.getByRole("button", {
+        name: "Go to the main camera live view",
+      }),
+    });
+  }
+
+  /** The centered camera friendly-name label in the recording header. */
+  get recordingHeaderName(): Locator {
+    return this.recordingHeader.locator(".capitalize");
+  }
+
   /** The filter popover content (desktop) or drawer (mobile). */
   get filterOverlay(): Locator {
     return this.page

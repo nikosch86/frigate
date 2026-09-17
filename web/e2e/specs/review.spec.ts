@@ -6,7 +6,7 @@
  * radix-overlay-regressions.spec.ts.
  */
 
-import { test, expect } from "../fixtures/frigate-test";
+import { test, expect, type FrigateApp } from "../fixtures/frigate-test";
 import { BasePage } from "../pages/base.page";
 import { ReviewPage } from "../pages/review.page";
 import {
@@ -206,6 +206,102 @@ test.describe("Review — timeline (desktop) @critical", () => {
         { timeout: 10_000 },
       )
       .toMatch(/[AP]M|\d+:\d+/);
+  });
+});
+
+test.describe("Review — thumbnail camera labels @critical @mobile", () => {
+  // The bundled reviews.json uses ISO timestamps; the list needs epoch
+  // seconds near now to render cards.
+  const now = Math.floor(Date.now() / 1000);
+  const labelledReviews = [
+    {
+      id: "label-review-001",
+      camera: "front_door",
+      start_time: now - 600,
+      end_time: now - 570,
+      has_been_reviewed: false,
+      severity: "alert",
+      thumb_path: "/clips/front_door/label-review-001-thumb.jpg",
+      data: {
+        audio: [],
+        detections: ["person-001"],
+        objects: ["person"],
+        sub_labels: [],
+        significant_motion_areas: [],
+        zones: [],
+      },
+    },
+    {
+      id: "label-review-002",
+      camera: "backyard",
+      start_time: now - 1200,
+      end_time: now - 1170,
+      has_been_reviewed: false,
+      severity: "alert",
+      thumb_path: "/clips/backyard/label-review-002-thumb.jpg",
+      data: {
+        audio: [],
+        detections: ["car-002"],
+        objects: ["car"],
+        sub_labels: [],
+        significant_motion_areas: [],
+        zones: [],
+      },
+    },
+  ];
+
+  test("each review thumbnail is labelled with its camera friendly name", async ({
+    frigateApp,
+  }) => {
+    await frigateApp.installDefaults({ reviews: labelledReviews });
+    await frigateApp.goto("/review");
+    const review = new ReviewPage(frigateApp.page, !frigateApp.isMobile);
+    await expect(review.reviewItems).toHaveCount(2, { timeout: 10_000 });
+    await expect(review.thumbnailsLabelled("Front Door")).toHaveCount(1);
+    await expect(review.thumbnailsLabelled("Backyard")).toHaveCount(1);
+    await expect(
+      review.thumbnailsLabelled("Front Door").getByText("Front Door"),
+    ).toBeVisible();
+  });
+});
+
+test.describe("Review — recording view header @critical", () => {
+  const playbackTime = Math.floor(Date.now() / 1000) - 300;
+
+  // The recording view fetches these while rendering; the preview server
+  // has no backend for them.
+  async function openRecordingView(app: FrigateApp) {
+    await app.page.route("**/api/*/recordings**", (route) =>
+      route.fulfill({ json: [] }),
+    );
+    await app.page.route("**/api/recordings/unavailable**", (route) =>
+      route.fulfill({ json: [] }),
+    );
+    await app.page.route("**/api/*/recordings/coverage**", (route) =>
+      route.fulfill({
+        json: { spans: [], codecs_compatible: true, streams: {} },
+      }),
+    );
+    await app.goto(`/review?timestamp=front_door_${playbackTime}`);
+  }
+
+  test("desktop header shows the camera friendly name", async ({
+    frigateApp,
+  }) => {
+    test.skip(frigateApp.isMobile, "Desktop shows the name, mobile the logo");
+    await openRecordingView(frigateApp);
+    const review = new ReviewPage(frigateApp.page, true);
+    await expect(review.recordingHeader).toBeVisible({ timeout: 15_000 });
+    await expect(review.recordingHeaderName).toHaveText("Front Door");
+  });
+
+  test("mobile header shows no camera name @mobile", async ({ frigateApp }) => {
+    test.skip(!frigateApp.isMobile, "Mobile-only");
+    await openRecordingView(frigateApp);
+    const review = new ReviewPage(frigateApp.page, false);
+    await expect(review.recordingHeader).toBeVisible({ timeout: 15_000 });
+    await expect(review.recordingHeaderName).toHaveCount(0);
+    await expect(review.recordingHeader.getByText("Front Door")).toHaveCount(0);
   });
 });
 
