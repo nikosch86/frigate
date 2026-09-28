@@ -86,6 +86,31 @@ class TestMqttCommandOffload(unittest.TestCase):
         self.assertTrue(handled.wait(2))
         self.assertEqual(received, [("cam/detect/set", "OFF")])
 
+    def test_failing_command_is_logged_with_its_topic(self):
+        """The worker swallows the exception, so the log is the only trace
+        that a command was lost."""
+        handled = threading.Event()
+
+        def dispatcher(topic, payload):
+            if topic == "restart":
+                raise ValueError("boom")
+            handled.set()
+
+        mqtt_client = self._client(dispatcher)
+
+        with self.assertLogs("frigate.comms.mqtt", level="ERROR") as logs:
+            mqtt_client.on_mqtt_command(None, None, _message("frigate/restart", b"x"))
+            # commands run in order, so once this one is handled the failure
+            # before it has already been logged
+            mqtt_client.on_mqtt_command(
+                None, None, _message("frigate/cam/detect/set", b"ON")
+            )
+            self.assertTrue(handled.wait(2))
+
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("frigate/restart", logs.records[0].getMessage())
+        self.assertIsInstance(logs.records[0].exc_info[1], ValueError)
+
     def test_stop_ends_command_thread(self):
         mqtt_client = self._client(MagicMock())
 

@@ -195,8 +195,9 @@ class MqttClient(Communicator):
     def on_mqtt_command(
         self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage
     ) -> None:
-        # runs on the paho network thread, a slow or failing command handled
-        # here would stop keepalives and the broker drops us without a trace
+        # called on the paho network thread, where a slow command handler would stall
+        # keepalives until the broker drops the connection and an exception would
+        # end the thread
         self._command_queue.put((message.topic, message.payload))
 
     def _process_commands(self) -> None:
@@ -209,7 +210,7 @@ class MqttClient(Communicator):
                     payload.decode(),
                 )
             except Exception:
-                logger.exception(f"Failed to handle MQTT command on {topic}")
+                logger.exception("Failed to handle MQTT command on %s", topic)
 
     def _on_connect(
         self,
