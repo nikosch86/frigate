@@ -87,6 +87,7 @@ class WebPushClient(Communicator):
                 self.web_pushers[user["username"]].append(WebPusher(sub))
 
         # notification and auth config updater
+        self._config_update_lock = threading.Lock()
         self.global_config_subscriber = ConfigSubscriber("config/")
         self.config_subscriber = CameraConfigUpdateSubscriber(
             self.config,
@@ -181,6 +182,34 @@ class WebPushClient(Communicator):
         while not self.stop_event.wait(1):
             self._clear_expired_suspensions()
 
+    def _check_for_config_updates(self) -> None:
+        # publish runs on the mqtt, ipc, websocket and api threads but zmq sockets
+        # are not thread safe, a concurrent drain can take another thread's second
+        # frame and leave that thread blocked in recv until the next config update
+        with self._config_update_lock:
+            # check for updated global config (notifications, auth)
+            while True:
+                config_topic, config_payload = (
+                    self.global_config_subscriber.check_for_update()
+                )
+                if config_topic is None:
+                    break
+                if config_topic == "config/notifications" and config_payload:
+                    self.config.notifications = config_payload
+                elif config_topic == "config/auth":
+                    if isinstance(config_payload, AuthConfig):
+                        self.config.auth = config_payload
+                    self._refresh_user_cameras()
+
+            updates = self.config_subscriber.check_for_updates()
+
+            if "add" in updates:
+                for camera in updates["add"]:
+                    self.suspended_cameras[camera] = 0
+                    self.last_camera_notification_time[camera] = 0
+
+                self._refresh_user_cameras()
+
     def _clear_expired_suspensions(self) -> None:
         """Reset and broadcast cameras whose suspension window has elapsed."""
         now = datetime.datetime.now().timestamp()
@@ -194,28 +223,7 @@ class WebPushClient(Communicator):
 
     def publish(self, topic: str, payload: Any, retain: bool = False) -> None:
         """Wrapper for publishing when client is in valid state."""
-        # check for updated global config (notifications, auth)
-        while True:
-            config_topic, config_payload = (
-                self.global_config_subscriber.check_for_update()
-            )
-            if config_topic is None:
-                break
-            if config_topic == "config/notifications" and config_payload:
-                self.config.notifications = config_payload
-            elif config_topic == "config/auth":
-                if isinstance(config_payload, AuthConfig):
-                    self.config.auth = config_payload
-                self._refresh_user_cameras()
-
-        updates = self.config_subscriber.check_for_updates()
-
-        if "add" in updates:
-            for camera in updates["add"]:
-                self.suspended_cameras[camera] = 0
-                self.last_camera_notification_time[camera] = 0
-
-            self._refresh_user_cameras()
+        self._check_for_config_updates()
 
         if topic == "reviews":
             decoded = json.loads(payload)
