@@ -32,6 +32,11 @@ def _message(topic: str, payload: bytes) -> MagicMock:
 
 
 class TestMqttCommandOffload(unittest.TestCase):
+    def _client(self, dispatcher) -> MqttClient:
+        mqtt_client = _start_client(dispatcher)
+        self.addCleanup(mqtt_client.stop)
+        return mqtt_client
+
     def test_blocking_command_does_not_block_network_thread(self):
         """A dispatcher that never returns must not stall the paho callback,
         otherwise keepalives stop and the broker silently drops Frigate."""
@@ -44,7 +49,7 @@ class TestMqttCommandOffload(unittest.TestCase):
             received.append((topic, payload))
             handled.set()
 
-        mqtt_client = _start_client(dispatcher)
+        mqtt_client = self._client(dispatcher)
         callback_done = threading.Event()
 
         def paho_callback():
@@ -70,7 +75,7 @@ class TestMqttCommandOffload(unittest.TestCase):
             received.append((topic, payload))
             handled.set()
 
-        mqtt_client = _start_client(dispatcher)
+        mqtt_client = self._client(dispatcher)
 
         mqtt_client.on_mqtt_command(None, None, _message("frigate/restart", b"boom"))
         mqtt_client.on_mqtt_command(None, None, _message("frigate/restart", b"\xff"))
@@ -82,7 +87,7 @@ class TestMqttCommandOffload(unittest.TestCase):
         self.assertEqual(received, [("cam/detect/set", "OFF")])
 
     def test_stop_ends_command_thread(self):
-        mqtt_client = _start_client(MagicMock())
+        mqtt_client = self._client(MagicMock())
 
         mqtt_client.stop()
 
