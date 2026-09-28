@@ -1,4 +1,5 @@
 import logging
+import queue
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -19,6 +20,7 @@ class MqttClient(Communicator):
         self.config = config
         self.mqtt_config = config.mqtt
         self.connected = False
+        self._command_queue: queue.Queue[tuple[str, bytes] | None] = queue.Queue()
 
     def subscribe(self, receiver: Callable) -> None:
         """Wrapper for allowing dispatcher to subscribe."""
@@ -41,6 +43,7 @@ class MqttClient(Communicator):
     def stop(self) -> None:
         self.publish("available", "stopped", retain=True)
         self.client.disconnect()
+        self._command_queue.put(None)
 
     def _notifications_enabled_in_config(self) -> bool:
         """Whether notifications are configured globally or on any camera.
@@ -192,10 +195,21 @@ class MqttClient(Communicator):
     def on_mqtt_command(
         self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage
     ) -> None:
-        self._dispatcher(
-            message.topic.replace(f"{self.mqtt_config.topic_prefix}/", "", 1),
-            message.payload.decode(),
-        )
+        # runs on the paho network thread, a slow or failing command handled
+        # here would stop keepalives and the broker drops us without a trace
+        self._command_queue.put((message.topic, message.payload))
+
+    def _process_commands(self) -> None:
+        while (command := self._command_queue.get()) is not None:
+            topic, payload = command
+
+            try:
+                self._dispatcher(
+                    topic.replace(f"{self.mqtt_config.topic_prefix}/", "", 1),
+                    payload.decode(),
+                )
+            except Exception:
+                logger.exception(f"Failed to handle MQTT command on {topic}")
 
     def _on_connect(
         self,
@@ -243,6 +257,11 @@ class MqttClient(Communicator):
 
     def _start(self) -> None:
         """Start mqtt client."""
+        self._command_thread = threading.Thread(
+            target=self._process_commands, name="mqtt_commands", daemon=True
+        )
+        self._command_thread.start()
+
         self.client = mqtt.Client(
             callback_api_version=CallbackAPIVersion.VERSION2,
             client_id=self.mqtt_config.client_id,
