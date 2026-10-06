@@ -1350,10 +1350,12 @@ class OnvifController:
                             ],
                             [0, 1],
                         )
+                        self.cams[camera_name]["zoom_position_reported"] = True
                         logger.debug(
                             f"{camera_name}: Camera zoom level: {self.ptz_metrics[camera_name].zoom_level.value}"
                         )
                     else:
+                        self.cams[camera_name]["zoom_position_reported"] = False
                         logger.debug(
                             f"{camera_name}: Camera doesn't report absolute zoom position, using default/last known value"
                         )

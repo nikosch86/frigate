@@ -243,15 +243,56 @@ class TestAutotrackerSetupZoomLevelDetection(unittest.TestCase):
         self.assertEqual(tracker.native_zoom_range[CAMERA], (2.0, 12.0))
         self.assertAlmostEqual(tracker.estimated_zoom_position[CAMERA], 0.2)
 
-    def test_absolute_without_report_disables_zooming(self) -> None:
-        tracker = _make_tracker(
-            features=("pt", "zoom-a"), zooming=ZoomingModeEnum.absolute
-        )
+    def test_continuous_estimate_ignores_zoom_report(self) -> None:
+        # continuous zooming treats a zoom level of 0.0 as unreported even when
+        # the status carried a zoom position
+        for reported in (True, False):
+            with self.subTest(reported=reported):
+                tracker = _make_tracker()
+                tracker.onvif.cams[CAMERA]["zoom_position_reported"] = reported
 
-        _run_setup(tracker)
+                _run_setup(tracker)
 
-        self.assertEqual(_config(tracker).zooming, ZoomingModeEnum.disabled)
-        self.assertNotIn(CAMERA, tracker.estimated_zoom_position)
+                self.assertEqual(_config(tracker).zooming, ZoomingModeEnum.continuous)
+                self.assertEqual(tracker.native_zoom_range[CAMERA], (1.0, 30.0))
+                self.assertEqual(tracker.estimated_zoom_position[CAMERA], 0.5)
+
+    ZOOM_MODES_NEEDING_FEEDBACK = (
+        (ZoomingModeEnum.absolute, "zoom-a"),
+        (ZoomingModeEnum.relative, "zoom-r"),
+    )
+
+    def test_absolute_and_relative_without_report_disable_zooming(self) -> None:
+        for zooming, feature in self.ZOOM_MODES_NEEDING_FEEDBACK:
+            with self.subTest(zooming=zooming):
+                tracker = _make_tracker(features=("pt", feature), zooming=zooming)
+                tracker.onvif.cams[CAMERA]["zoom_position_reported"] = False
+
+                _run_setup(tracker)
+
+                self.assertEqual(_config(tracker).zooming, ZoomingModeEnum.disabled)
+                self.assertNotIn(CAMERA, tracker.estimated_zoom_position)
+
+    def test_reported_minimum_zoom_keeps_absolute_and_relative_zooming(self) -> None:
+        for zooming, feature in self.ZOOM_MODES_NEEDING_FEEDBACK:
+            with self.subTest(zooming=zooming):
+                tracker = _make_tracker(features=("pt", feature), zooming=zooming)
+                # a fully zoomed out camera reports the same 0.0 the metric
+                # starts with
+                tracker.onvif.cams[CAMERA]["zoom_position_reported"] = True
+
+                _run_setup(tracker)
+
+                self.assertEqual(_config(tracker).zooming, zooming)
+
+    def test_unknown_zoom_report_keeps_absolute_and_relative_zooming(self) -> None:
+        for zooming, feature in self.ZOOM_MODES_NEEDING_FEEDBACK:
+            with self.subTest(zooming=zooming):
+                tracker = _make_tracker(features=("pt", feature), zooming=zooming)
+
+                _run_setup(tracker)
+
+                self.assertEqual(_config(tracker).zooming, zooming)
 
 
 class TestZoomConversion(unittest.TestCase):

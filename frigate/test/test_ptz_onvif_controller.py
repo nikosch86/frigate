@@ -403,6 +403,54 @@ class TestGetCameraStatusZoomLevel(_ControllerTestCase):
 
         self.assertAlmostEqual(self._metrics(controller).zoom_level.value, 0.42)
 
+    def test_reported_minimum_zoom_counts_as_a_report(self) -> None:
+        controller = _make_controller(zooming=ZoomingModeEnum.relative)
+        self._cam(controller)["absolute_zoom_range"] = {
+            "XRange": {"Min": 0.0, "Max": 100.0}
+        }
+
+        self._run_status(controller, _idle_status(Zoom=SimpleNamespace(x=0.0)))
+
+        self.assertEqual(self._metrics(controller).zoom_level.value, 0.0)
+        self.assertIs(self._cam(controller)["zoom_position_reported"], True)
+
+    def test_missing_position_counts_as_no_report(self) -> None:
+        controller = _make_controller(zooming=ZoomingModeEnum.relative)
+        self._cam(controller)["absolute_zoom_range"] = {
+            "XRange": {"Min": 0.0, "Max": 100.0}
+        }
+
+        self._run_status(controller, _idle_status())
+
+        self.assertIs(self._cam(controller)["zoom_position_reported"], False)
+
+    def test_missing_absolute_range_counts_as_no_report(self) -> None:
+        controller = _make_controller(zooming=ZoomingModeEnum.relative)
+
+        self._run_status(controller, _idle_status(Zoom=SimpleNamespace(x=25.0)))
+
+        self.assertIs(self._cam(controller)["zoom_position_reported"], False)
+
+    def test_malformed_zoom_value_leaves_the_report_unknown(self) -> None:
+        controller = _make_controller(zooming=ZoomingModeEnum.absolute)
+        self._cam(controller)["absolute_zoom_range"] = {
+            "XRange": {"Min": 0.0, "Max": 100.0}
+        }
+
+        self._run_status(controller, _idle_status(Zoom=SimpleNamespace(x="bad")))
+
+        self.assertNotIn("zoom_position_reported", self._cam(controller))
+
+    def test_zoom_report_is_not_tracked_when_zooming_disabled(self) -> None:
+        controller = _make_controller(zooming=ZoomingModeEnum.disabled)
+        self._cam(controller)["absolute_zoom_range"] = {
+            "XRange": {"Min": 0.0, "Max": 100.0}
+        }
+
+        self._run_status(controller, _idle_status(Zoom=SimpleNamespace(x=25.0)))
+
+        self.assertNotIn("zoom_position_reported", self._cam(controller))
+
 
 def _moving_status() -> SimpleNamespace:
     return SimpleNamespace(MoveStatus=SimpleNamespace(PanTilt="MOVING", Zoom="IDLE"))

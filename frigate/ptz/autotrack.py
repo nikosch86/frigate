@@ -492,7 +492,9 @@ class PtzAutoTracker:
                             logger.info(
                                 f"{camera}: Using middle position (normalized: 0.5, native: {native_middle:.1f}x)"
                             )
-                    else:
+                    elif self.onvif.cams[camera].get("zoom_position_reported") is False:
+                        # a zoom level of 0.0 alone cannot tell a camera without
+                        # position feedback from one that is fully zoomed out
                         logger.warning(
                             f"{camera}: Camera does not report current zoom level. "
                             f"Disabling zooming for autotracking as absolute/relative zoom requires position feedback."
