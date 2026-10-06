@@ -630,9 +630,21 @@ class TestAutotrackMovePtzPrediction(unittest.TestCase):
 
         tracker._autotrack_move_ptz(CAMERA, _obj([450, 450, 550, 550]))
 
-        # only continuous moves ramp the lead down towards the center
+        # only continuous moves ramp the lead down toward the center
         pan, tilt = self._enqueued(tracker)
         self.assertAlmostEqual(pan, 0.02)
+        self.assertAlmostEqual(tilt, 0.0)
+
+    def test_relative_fov_with_weights_does_not_lead_stationary_object(self) -> None:
+        tracker = self._tracker("relative_fov", calibrated=True)
+        tracker.tracked_object_metrics[CAMERA]["velocity"] = np.zeros((4,))
+
+        tracker._autotrack_move_ptz(CAMERA, _obj([601, 450, 700, 550]))
+
+        # the lead math rounds the centroid to a whole pixel, so the half pixel
+        # only survives when no lead is applied
+        pan, tilt = self._enqueued(tracker)
+        self.assertAlmostEqual(pan, 0.301)
         self.assertAlmostEqual(tilt, 0.0)
 
     def test_continuous_with_weights_keeps_ramped_lead(self) -> None:
