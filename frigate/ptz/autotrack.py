@@ -1694,11 +1694,9 @@ class PtzAutoTracker:
             )
         )
 
-        if (
-            camera_config.onvif.autotracking.movement_weights
-        ):  # use estimates if we have available coefficients
-            predicted_movement_time = self._predict_movement_time(camera, pan, tilt)
-        elif self.movement_mode.get(camera) == "continuous_timed":
+        if self.movement_mode.get(camera) == "continuous_timed":
+            # a timed move lasts as long as it is commanded to, so this takes
+            # priority over movement weights, which describe relative moves
             _, _, duration = self._calculate_continuous_move_params(camera, pan, tilt)
             predicted_movement_time = duration
 
@@ -1725,6 +1723,34 @@ class PtzAutoTracker:
                     * camera_fps
                     * predicted_movement_time
                     * average_velocity
+                )
+
+                predicted_box = np.round(predicted_box).astype(int)
+
+                centroid_x = round((predicted_box[0] + predicted_box[2]) / 2)
+                centroid_y = round((predicted_box[1] + predicted_box[3]) / 2)
+
+                # recalculate pan and tilt with new centroid
+                pan = ((centroid_x / camera_width) - 0.5) * 2
+                tilt = (0.5 - (centroid_y / camera_height)) * 2
+
+            logger.debug(f"{camera}: Original box: {obj.obj_data['box']}")
+            logger.debug(f"{camera}: Predicted box: {tuple(predicted_box)}")
+            logger.debug(
+                f"{camera}: Velocity: {tuple(np.round(average_velocity).flatten().astype(int))}"
+            )
+        elif (
+            camera_config.onvif.autotracking.movement_weights
+        ):  # use estimates if we have available coefficients
+            predicted_movement_time = self._predict_movement_time(camera, pan, tilt)
+
+            if np.any(average_velocity):
+                # this box could exceed the frame boundaries if velocity is high
+                # but we'll handle that in _enqueue_move() as two separate moves
+                current_box = np.array(obj.obj_data["box"])
+                predicted_box = (
+                    current_box
+                    + camera_fps * predicted_movement_time * average_velocity
                 )
 
                 predicted_box = np.round(predicted_box).astype(int)

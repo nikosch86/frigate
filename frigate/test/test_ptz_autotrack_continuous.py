@@ -562,10 +562,18 @@ class TestGetZoomAmountContinuous(unittest.TestCase):
 
 
 class TestAutotrackMovePtzPrediction(unittest.TestCase):
-    def _tracker(self, mode: str) -> PtzAutoTracker:
-        tracker = _make_tracker(frame_shape=(1000, 1000), fps=5)
+    # intercept 1 with move coefficients (0.2, 1) predicts a 0.2s move plus 1s
+    # per unit of pan/tilt distance
+    WEIGHTS = ["0", "1", "1", "0.2", "1", "1"]
+
+    def _tracker(self, mode: str, calibrated: bool = False) -> PtzAutoTracker:
+        overrides = {"movement_weights": self.WEIGHTS} if calibrated else {}
+        tracker = _make_tracker(frame_shape=(1000, 1000), fps=5, **overrides)
         tracker.movement_mode[CAMERA] = mode
         tracker.continuous_speed[CAMERA] = 2.0
+        if calibrated:
+            tracker.intercept[CAMERA] = 1.0
+            tracker.move_coefficients[CAMERA] = [0.2, 1.0]
         tracker.tracked_object_metrics[CAMERA].update(
             {"velocity": np.array([10.0, 0.0, 10.0, 0.0]), "valid_velocity": True}
         )
@@ -605,6 +613,37 @@ class TestAutotrackMovePtzPrediction(unittest.TestCase):
 
         pan, tilt = self._enqueued(tracker)
         self.assertAlmostEqual(pan, 0.3)
+        self.assertAlmostEqual(tilt, 0.0)
+
+    def test_relative_fov_with_weights_leads_moving_object(self) -> None:
+        tracker = self._tracker("relative_fov", calibrated=True)
+
+        tracker._autotrack_move_ptz(CAMERA, _obj([600, 450, 700, 550]))
+
+        # a predicted 0.5s move at 5 fps puts the box 25px further along
+        pan, tilt = self._enqueued(tracker)
+        self.assertAlmostEqual(pan, 0.35)
+        self.assertAlmostEqual(tilt, 0.0)
+
+    def test_relative_fov_with_weights_leads_at_full_strength_at_center(self) -> None:
+        tracker = self._tracker("relative_fov", calibrated=True)
+
+        tracker._autotrack_move_ptz(CAMERA, _obj([450, 450, 550, 550]))
+
+        # only continuous moves ramp the lead down towards the center
+        pan, tilt = self._enqueued(tracker)
+        self.assertAlmostEqual(pan, 0.02)
+        self.assertAlmostEqual(tilt, 0.0)
+
+    def test_continuous_with_weights_keeps_ramped_lead(self) -> None:
+        tracker = self._tracker("continuous_timed", calibrated=True)
+
+        tracker._autotrack_move_ptz(CAMERA, _obj([600, 450, 700, 550]))
+
+        # movement weights describe relative moves, so they must not replace
+        # the timed move's own duration
+        pan, tilt = self._enqueued(tracker)
+        self.assertAlmostEqual(pan, 0.346)
         self.assertAlmostEqual(tilt, 0.0)
 
 
