@@ -1049,6 +1049,10 @@ cameras:
         return_preset: home
         # Optional: Seconds to delay before returning to preset. (default: shown below)
         timeout: 10
+        # Optional: Seconds after a relative move command during which an idle ONVIF MoveStatus is ignored unless
+        # the camera has reported moving. Use for cameras that keep reporting idle for a moment after a relative
+        # move begins. (default: shown below)
+        move_start_grace_period: 0
         # Optional: Pan/tilt speed in field-of-view units per second at velocity 1.0. (default: shown below)
         # Only used for cameras without FOV RelativeMove support, which are tracked with timed ContinuousMove commands.
         continuous_speed: 2.0

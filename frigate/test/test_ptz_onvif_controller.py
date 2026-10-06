@@ -404,6 +404,126 @@ class TestGetCameraStatusZoomLevel(_ControllerTestCase):
         self.assertAlmostEqual(self._metrics(controller).zoom_level.value, 0.42)
 
 
+def _moving_status() -> SimpleNamespace:
+    return SimpleNamespace(MoveStatus=SimpleNamespace(PanTilt="MOVING", Zoom="IDLE"))
+
+
+class TestGetCameraStatusMoveStartGracePeriod(_ControllerTestCase):
+    # long enough that the test itself never outlasts it
+    GRACE_PERIOD = 5.0
+
+    def _controller(self, grace_period: float) -> OnvifController:
+        controller = _make_controller(
+            features=("pt", "pt-r-fov", "zoom-a"), zooming=ZoomingModeEnum.disabled
+        )
+        autotracking = controller.config.cameras[CAMERA].onvif.autotracking
+        autotracking.move_start_grace_period = grace_period
+
+        cam = self._cam(controller)
+        cam["relative_move_request"] = MagicMock()
+        cam["relative_fov_range"] = {
+            "XRange": {"Min": -1.0, "Max": 1.0},
+            "YRange": {"Min": -1.0, "Max": 1.0},
+        }
+        cam["absolute_move_request"] = MagicMock()
+        cam["absolute_zoom_range"] = {"XRange": {"Min": 0.0, "Max": 1.0}}
+        cam["ptz"].RelativeMove = AsyncMock()
+        cam["ptz"].AbsoluteMove = AsyncMock()
+        cam["ptz"].GotoPreset = AsyncMock()
+        return controller
+
+    def _poll(self, controller: OnvifController, status) -> None:
+        self._cam(controller)["ptz"].GetStatus = AsyncMock(return_value=status)
+        asyncio.run(controller.get_camera_status(CAMERA))
+
+    def _assert_still_moving(self, controller: OnvifController) -> None:
+        self.assertFalse(self._metrics(controller).motor_stopped.is_set())
+        self.assertEqual(self._metrics(controller).stop_time.value, 0)
+
+    def _assert_stopped(self, controller: OnvifController) -> None:
+        self.assertTrue(self._metrics(controller).motor_stopped.is_set())
+        self.assertEqual(self._metrics(controller).stop_time.value, 100.0)
+
+    def test_idle_right_after_relative_move_is_ignored(self) -> None:
+        controller = self._controller(self.GRACE_PERIOD)
+        asyncio.run(controller._move_relative(CAMERA, 0.5, 0.0, 0, 1))
+
+        self._poll(controller, _idle_status())
+
+        self._assert_still_moving(controller)
+
+    def test_idle_after_moving_ends_the_move(self) -> None:
+        controller = self._controller(self.GRACE_PERIOD)
+        asyncio.run(controller._move_relative(CAMERA, 0.5, 0.0, 0, 1))
+
+        self._poll(controller, _moving_status())
+        self._poll(controller, _idle_status())
+
+        self._assert_stopped(controller)
+
+    def test_idle_after_grace_period_ends_the_move(self) -> None:
+        controller = self._controller(self.GRACE_PERIOD)
+        asyncio.run(controller._move_relative(CAMERA, 0.5, 0.0, 0, 1))
+        self._cam(controller)["move_command_time"] -= self.GRACE_PERIOD
+
+        self._poll(controller, _idle_status())
+
+        self._assert_stopped(controller)
+
+    def test_idle_ends_the_move_at_once_without_grace_period(self) -> None:
+        controller = self._controller(0.0)
+        asyncio.run(controller._move_relative(CAMERA, 0.5, 0.0, 0, 1))
+
+        self._poll(controller, _idle_status())
+
+        self._assert_stopped(controller)
+
+    def test_waiting_for_the_motor_rides_out_idle_before_moving(self) -> None:
+        controller = self._controller(self.GRACE_PERIOD)
+        get_status = AsyncMock(
+            side_effect=[
+                _idle_status(),
+                _moving_status(),
+                _moving_status(),
+                _idle_status(),
+            ]
+        )
+        self._cam(controller)["ptz"].GetStatus = get_status
+
+        async def move_and_wait() -> None:
+            await controller._move_relative(CAMERA, 0.5, 0.0, 0, 1)
+            # give up after the last status, so a move that never ends fails
+            # the test instead of hanging it
+            while (
+                not self._metrics(controller).motor_stopped.is_set()
+                and get_status.await_count < 4
+            ):
+                await controller.get_camera_status(CAMERA)
+
+        asyncio.run(move_and_wait())
+
+        self.assertEqual(get_status.await_count, 4)
+        self._assert_stopped(controller)
+
+    def test_preset_move_has_no_grace_period(self) -> None:
+        controller = self._controller(self.GRACE_PERIOD)
+        asyncio.run(controller._move_to_preset(CAMERA, "home"))
+        # the autotracker marks the motor as running once the preset is sent
+        self._metrics(controller).motor_stopped.clear()
+
+        self._poll(controller, _idle_status())
+
+        self._assert_stopped(controller)
+
+    def test_absolute_zoom_has_no_grace_period(self) -> None:
+        controller = self._controller(self.GRACE_PERIOD)
+        asyncio.run(controller._zoom_absolute(CAMERA, 0.5, 1))
+
+        self._poll(controller, _idle_status())
+
+        self._assert_stopped(controller)
+
+
 class _Node(dict):
     """Minimal stand-in for zeep objects: attribute and item access on one dict."""
 

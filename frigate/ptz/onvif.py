@@ -702,6 +702,7 @@ class OnvifController:
         # only track start_time for autotracking
         if self.ptz_metrics[camera_name].autotracker_enabled.value:
             self.ptz_metrics[camera_name].motor_stopped.clear()
+            self.cams[camera_name]["move_command_time"] = time.monotonic()
             logger.debug(
                 f"{camera_name}: PTZ start time: {self.ptz_metrics[camera_name].frame_time.value}"
             )
@@ -1232,6 +1233,27 @@ class OnvifController:
             )
             return False
 
+    def _awaiting_move_start(self, camera_name: str) -> bool:
+        """Check whether a commanded relative move may not have started yet.
+
+        Args:
+            camera_name: Name of camera
+
+        Returns:
+            True while the camera has not reported moving since the last
+            relative move command and the configured grace period is running
+        """
+        command_time = self.cams[camera_name].get("move_command_time")
+
+        if command_time is None:
+            return False
+
+        grace_period = self.config.cameras[
+            camera_name
+        ].onvif.autotracking.move_start_grace_period
+
+        return time.monotonic() - command_time < grace_period
+
     async def get_camera_status(self, camera_name: str) -> None:
         async with self.status_locks[camera_name]:
             if camera_name not in self.cams.keys():
@@ -1276,7 +1298,9 @@ class OnvifController:
                 zoom_status is None or zoom_status == "IDLE"
             ):
                 self.cams[camera_name]["active"] = False
-                if not self.ptz_metrics[camera_name].motor_stopped.is_set():
+                if not self.ptz_metrics[
+                    camera_name
+                ].motor_stopped.is_set() and not self._awaiting_move_start(camera_name):
                     self.ptz_metrics[camera_name].motor_stopped.set()
 
                     logger.debug(
@@ -1288,6 +1312,8 @@ class OnvifController:
                     ].frame_time.value
             else:
                 self.cams[camera_name]["active"] = True
+                # the move is underway, so the next idle status marks its end
+                self.cams[camera_name]["move_command_time"] = None
                 if self.ptz_metrics[camera_name].motor_stopped.is_set():
                     self.ptz_metrics[camera_name].motor_stopped.clear()
 

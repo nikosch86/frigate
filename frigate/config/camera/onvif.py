@@ -59,6 +59,12 @@ class PtzAutotrackConfig(FrigateBaseModel):
         title="Return timeout",
         description="Wait this many seconds after losing tracking before returning camera to preset position.",
     )
+    move_start_grace_period: float = Field(
+        default=0.0,
+        title="Move start grace period",
+        description="Seconds after a relative move command during which an idle ONVIF MoveStatus is ignored unless the camera has reported moving. Use for cameras that keep reporting idle for a moment after a relative move begins. Typical range: 0.2-0.5. Set to 0 to disable.",
+        ge=0.0,
+    )
     continuous_speed: float = Field(
         default=2.0,
         title="Continuous move speed",

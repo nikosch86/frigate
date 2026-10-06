@@ -56,6 +56,25 @@ class TestContinuousSpeedFields(unittest.TestCase):
             PtzAutotrackConfig(continuous_zoom_speed=5.1)
 
 
+class TestMoveStartGracePeriod(unittest.TestCase):
+    def test_defaults_to_disabled(self) -> None:
+        self.assertEqual(PtzAutotrackConfig().move_start_grace_period, 0.0)
+
+    def test_accepts_explicit_zero(self) -> None:
+        config = PtzAutotrackConfig(move_start_grace_period=0)
+
+        self.assertEqual(config.move_start_grace_period, 0.0)
+
+    def test_accepts_fractional_seconds(self) -> None:
+        config = PtzAutotrackConfig(move_start_grace_period=0.3)
+
+        self.assertEqual(config.move_start_grace_period, 0.3)
+
+    def test_rejects_negative_values(self) -> None:
+        with self.assertRaises(ValidationError):
+            PtzAutotrackConfig(move_start_grace_period=-0.1)
+
+
 class TestAssumedZoomRange(unittest.TestCase):
     def test_none_is_kept(self) -> None:
         self.assertIsNone(

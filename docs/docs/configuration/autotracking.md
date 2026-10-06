@@ -59,20 +59,21 @@ Navigate to <NavPath path="Settings > Camera configuration > ONVIF" /> for the d
 
 **Autotracking**
 
-| Field                     | Description                                                                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Enable Autotracking**   | Enable or disable object autotracking (default: false)                                                                               |
-| **Calibrate on start**    | Calibrate the camera on startup by measuring PTZ motor speed (default: false)                                                        |
-| **Zoom mode**             | Zoom mode during autotracking: `disabled`, `absolute`, `relative`, or `continuous` (default: disabled)                               |
-| **Zoom Factor**           | Controls zoom behavior on tracked objects, between 0.1 and 0.75. Lower keeps more scene visible; higher zooms in more (default: 0.3) |
-| **Tracked objects**       | List of object types to track (default: person)                                                                                      |
-| **Required Zones**        | Zones an object must enter to begin autotracking                                                                                     |
-| **Return Preset**         | Name of ONVIF preset in camera firmware to return to when tracking ends (default: home)                                              |
-| **Return timeout**        | Seconds to delay before returning to preset (default: 10)                                                                            |
-| **Continuous move speed** | Pan/tilt speed in FOV units per second at velocity 1.0, used for cameras without FOV RelativeMove support (default: 2.0)             |
-| **Continuous zoom speed** | Zoom speed in zoom units per second at velocity 1.0 for continuous zooming (default: 1.0)                                            |
-| **Assumed zoom range**    | Native zoom range, e.g. `[1, 30]`, for cameras that do not report zoom position (default: unset, 1x to 30x assumed)                  |
-| **Preset zoom level**     | Native zoom level at the return preset for cameras that do not report zoom position (default: unset, middle of the range assumed)    |
+| Field                       | Description                                                                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Enable Autotracking**     | Enable or disable object autotracking (default: false)                                                                                  |
+| **Calibrate on start**      | Calibrate the camera on startup by measuring PTZ motor speed (default: false)                                                           |
+| **Zoom mode**               | Zoom mode during autotracking: `disabled`, `absolute`, `relative`, or `continuous` (default: disabled)                                  |
+| **Zoom Factor**             | Controls zoom behavior on tracked objects, between 0.1 and 0.75. Lower keeps more scene visible; higher zooms in more (default: 0.3)    |
+| **Tracked objects**         | List of object types to track (default: person)                                                                                         |
+| **Required Zones**          | Zones an object must enter to begin autotracking                                                                                        |
+| **Return Preset**           | Name of ONVIF preset in camera firmware to return to when tracking ends (default: home)                                                 |
+| **Return timeout**          | Seconds to delay before returning to preset (default: 10)                                                                               |
+| **Move start grace period** | Seconds after a relative move during which an idle ONVIF status is ignored unless the camera has reported moving (default: 0, disabled) |
+| **Continuous move speed**   | Pan/tilt speed in FOV units per second at velocity 1.0, used for cameras without FOV RelativeMove support (default: 2.0)                |
+| **Continuous zoom speed**   | Zoom speed in zoom units per second at velocity 1.0 for continuous zooming (default: 1.0)                                               |
+| **Assumed zoom range**      | Native zoom range, e.g. `[1, 30]`, for cameras that do not report zoom position (default: unset, 1x to 30x assumed)                     |
+| **Preset zoom level**       | Native zoom level at the return preset for cameras that do not report zoom position (default: unset, middle of the range assumed)       |
 
 </TabItem>
 <TabItem value="yaml">
@@ -134,6 +135,10 @@ cameras:
         return_preset: home
         # Optional: Seconds to delay before returning to preset. (default: shown below)
         timeout: 10
+        # Optional: Seconds after a relative move command during which an idle ONVIF MoveStatus is ignored unless
+        # the camera has reported moving. Use for cameras that keep reporting idle for a moment after a relative
+        # move begins. (default: shown below)
+        move_start_grace_period: 0
         # Optional: Pan/tilt speed in field-of-view units per second at velocity 1.0. (default: shown below)
         # Only used for cameras without FOV RelativeMove support, which are tracked with timed ContinuousMove commands.
         continuous_speed: 2.0
@@ -289,6 +294,14 @@ Watching Frigate's debug view can help to determine a possible cause. The autotr
 <FaqItem id="im-seeing-this-error-in-the-logs-autotracker-motion-estimator-couldnt-get-transformations-what-does-this-mean" question={"I'm seeing this error in the logs: \"Autotracker: motion estimator couldn't get transformations\". What does this mean?"}>
 
 To maintain object tracking during PTZ moves, Frigate tracks the motion of your camera based on the details of the frame. If you are seeing this message, it could mean that your `zoom_factor` may be set too high, the scene around your detected object does not have enough details (like hard edges or color variations), or your camera's shutter speed is too slow and motion blur is occurring. Try reducing `zoom_factor`, finding a way to alter the scene around your object, or changing your camera's shutter speed.
+
+</FaqItem>
+
+<FaqItem id="the-camera-makes-several-moves-in-quick-succession-or-the-debug-log-shows-an-actual-movement-time-of-0-why" question="The camera makes several moves in quick succession, or the debug log shows an actual movement time of 0. Why?">
+
+Frigate treats a move as finished when the camera's ONVIF `MoveStatus` reports idle. Some cameras keep reporting idle for a moment after a move command before switching to moving, so Frigate can read that first idle status as the end of a move that has only just begun. The debug log then shows `Actual movement time: 0.0` (or a single frame interval) for the move, and Frigate may issue further moves while the camera is still turning.
+
+If you see this, set `move_start_grace_period` for the camera to a little more than the delay, usually 0.2 to 0.5 seconds. For that long after each relative move command, an idle status is ignored unless the camera has already reported moving, so normal moves are not slowed down. A move too small for the camera to report at all will take the full grace period to complete. Only the relative moves made while tracking are covered; preset moves and absolute zoom moves are not affected. The default of 0 disables the grace period.
 
 </FaqItem>
 
