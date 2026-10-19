@@ -102,7 +102,9 @@ class MqttClient(Communicator):
             )
             self.publish(
                 f"{camera_name}/ptz_autotracker/state",
-                "ON" if camera.onvif.autotracking.enabled_in_config else "OFF",
+                # the runtime value, since setup turns autotracking off when the
+                # PTZ is unreachable, possibly before MQTT connects
+                "ON" if camera.onvif.autotracking.enabled else "OFF",
                 retain=True,
             )
             self.publish(

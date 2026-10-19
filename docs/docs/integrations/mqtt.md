@@ -507,7 +507,7 @@ Topic to turn the PTZ autotracker for a camera on and off. Expected values are `
 
 ### `frigate/<camera_name>/ptz_autotracker/state`
 
-Topic with current state of the PTZ autotracker for a camera. Published values are `ON` and `OFF`.
+Topic with current state of the PTZ autotracker for a camera. Published values are `ON` and `OFF`. It also reports `OFF` when Frigate turns autotracking off because it cannot be set up for the camera, and `ON` again if Frigate turns it back on once an unreachable camera answers over ONVIF (see [Autotracking turned itself off](/configuration/autotracking#autotracking-turned-itself-off-why)).
 
 ### `frigate/<camera_name>/ptz_autotracker/active`
 

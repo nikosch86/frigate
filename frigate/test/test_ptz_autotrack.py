@@ -10,14 +10,20 @@ KeyError on the autotracker thread or silently keep the wrong state:
 - ptz_metrics autotracker_enabled is what the camera processes read, but nothing
   updated it when autotracking was enabled through a config save, so it stayed
   False and the tracker never built a motion estimator.
+- autotracking disabled at startup because a PTZ was unreachable stayed off
+  after the camera came back, until a restart or a manual toggle.
 """
 
+import asyncio
+import threading
+import time
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from frigate.camera import PTZMetrics
 from frigate.config import FrigateConfig
-from frigate.ptz.autotrack import PtzAutoTracker
+from frigate.const import AUTOTRACKING_ONVIF_RETRY_MAX_DELAY
+from frigate.ptz.autotrack import OnvifSetupRetry, PtzAutoTracker
 
 CAMERA = "ptz_cam"
 
@@ -56,9 +62,11 @@ def _make_tracker(autotracking_enabled: bool = True) -> PtzAutoTracker:
     tracker.ptz_metrics = {CAMERA: PTZMetrics(autotracker_enabled=False)}
     tracker.onvif = MagicMock()
     tracker.config_subscriber = MagicMock()
+    tracker.dispatcher = MagicMock()
     tracker.autotracker_init = {}
     tracker.calibrating = {}
     tracker.tracked_object = {}
+    tracker.onvif_setup_retries = {}
     return tracker
 
 
@@ -124,6 +132,178 @@ class TestAutotrackerMetricSync(unittest.TestCase):
         }
 
         tracker.check_for_updates()
+
+
+class TestAutotrackerOnvifRetry(unittest.TestCase):
+    """Autotracking that setup disabled because ONVIF failed comes back on its own."""
+
+    def setUp(self) -> None:
+        # the probe runs on the ONVIF loop thread in production, so give it one
+        self.loop = asyncio.new_event_loop()
+        self.loop_thread = threading.Thread(target=self.loop.run_forever, daemon=True)
+        self.loop_thread.start()
+
+        self.tracker = _make_tracker(autotracking_enabled=False)
+        self.tracker.onvif.loop = self.loop
+        self.tracker.autotracker_init[CAMERA] = False
+        self.tracker.ptz_metrics[CAMERA].start_time.value = 5.0
+        self.retry = OnvifSetupRetry(delay=30, next_attempt=0)
+        self.tracker.onvif_setup_retries[CAMERA] = self.retry
+
+    def tearDown(self) -> None:
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.loop_thread.join(timeout=5)
+        self.loop.close()
+
+    def _probe_returns(self, **kwargs) -> AsyncMock:
+        self.tracker.onvif.get_camera_info = AsyncMock(**kwargs)
+        return self.tracker.onvif.get_camera_info
+
+    def _finish_attempt(self) -> None:
+        """Run one retry tick to start the probe and another once it finished."""
+        self.tracker.retry_onvif_setup()
+        self.retry.attempt.exception(timeout=5)
+        self.tracker.retry_onvif_setup()
+
+    def _autotracking(self) -> bool:
+        return self.tracker.config.cameras[CAMERA].onvif.autotracking.enabled
+
+    def test_reenables_autotracking_once_onvif_answers(self) -> None:
+        probe = self._probe_returns(return_value={"name": CAMERA, "features": ["pt"]})
+
+        self._finish_attempt()
+
+        probe.assert_awaited_once_with(CAMERA)
+        self.assertTrue(self._autotracking())
+        metrics = self.tracker.ptz_metrics[CAMERA]
+        self.assertTrue(metrics.autotracker_enabled.value)
+        self.assertEqual(metrics.start_time.value, 0)
+        self.tracker.dispatcher.publish.assert_called_once_with(
+            f"{CAMERA}/ptz_autotracker/state", "ON", retain=True
+        )
+        self.assertNotIn(CAMERA, self.tracker.onvif_setup_retries)
+        # setup runs again on the next tracked object, as after a manual ON
+        self.assertFalse(self.tracker.autotracker_init[CAMERA])
+
+    def test_backs_off_while_onvif_is_unreachable(self) -> None:
+        self._probe_returns(return_value={})
+
+        self._finish_attempt()
+
+        self.assertFalse(self._autotracking())
+        self.assertFalse(self.tracker.ptz_metrics[CAMERA].autotracker_enabled.value)
+        self.tracker.dispatcher.publish.assert_not_called()
+        self.assertIs(self.tracker.onvif_setup_retries[CAMERA], self.retry)
+        self.assertIsNone(self.retry.attempt)
+        self.assertEqual(self.retry.delay, 60)
+        self.assertAlmostEqual(self.retry.next_attempt - time.monotonic(), 60, delta=1)
+
+    def test_probe_error_counts_as_unreachable(self) -> None:
+        self._probe_returns(side_effect=OSError("no route to host"))
+
+        self._finish_attempt()
+
+        self.assertFalse(self._autotracking())
+        self.assertEqual(self.retry.delay, 60)
+
+    def test_backoff_is_capped(self) -> None:
+        self._probe_returns(return_value={})
+        self.retry.delay = AUTOTRACKING_ONVIF_RETRY_MAX_DELAY - 1
+
+        self._finish_attempt()
+
+        self.assertEqual(self.retry.delay, AUTOTRACKING_ONVIF_RETRY_MAX_DELAY)
+
+    def test_waits_until_the_next_attempt_is_due(self) -> None:
+        probe = self._probe_returns(return_value={"name": CAMERA})
+        self.retry.next_attempt = time.monotonic() + 100
+
+        self.tracker.retry_onvif_setup()
+
+        probe.assert_not_called()
+        self.assertIsNone(self.retry.attempt)
+
+    def test_does_not_block_while_the_probe_runs(self) -> None:
+        # an unreachable host can take seconds to time out, and the autotracker
+        # thread also maintains the other cameras
+        release = threading.Event()
+
+        async def slow_probe(camera):
+            await asyncio.get_running_loop().run_in_executor(None, release.wait)
+            return {"name": camera}
+
+        probe = self._probe_returns(side_effect=slow_probe)
+
+        self.tracker.retry_onvif_setup()
+        self.tracker.retry_onvif_setup()
+
+        self.assertEqual(probe.call_count, 1)
+        self.assertFalse(self._autotracking())
+
+        release.set()
+        self.retry.attempt.result(timeout=5)
+        self.tracker.retry_onvif_setup()
+
+        self.assertTrue(self._autotracking())
+
+    def test_user_switching_on_keeps_the_retry(self) -> None:
+        # the setup that follows a manual ON can fail and schedule a retry before
+        # this thread sees the ON
+        self.tracker.config.cameras[CAMERA].onvif.autotracking.enabled = True
+        self.tracker.config_subscriber.check_for_updates.return_value = {
+            "autotracking": [CAMERA]
+        }
+
+        self.tracker.check_for_updates()
+
+        self.assertIs(self.tracker.onvif_setup_retries[CAMERA], self.retry)
+
+    def test_user_change_cancels_the_retry(self) -> None:
+        # a user switching autotracking off must not be overridden later
+        probe = self._probe_returns(return_value={"name": CAMERA})
+        self.tracker.config_subscriber.check_for_updates.return_value = {
+            "autotracking": [CAMERA]
+        }
+
+        self.tracker.check_for_updates()
+        self.tracker.retry_onvif_setup()
+
+        probe.assert_not_called()
+        self.assertFalse(self._autotracking())
+        self.assertNotIn(CAMERA, self.tracker.onvif_setup_retries)
+
+    def test_user_change_during_a_probe_wins(self) -> None:
+        self._probe_returns(return_value={"name": CAMERA})
+        self.tracker.retry_onvif_setup()
+        self.retry.attempt.result(timeout=5)
+
+        self.tracker.config_subscriber.check_for_updates.return_value = {
+            "autotracking": [CAMERA]
+        }
+        self.tracker.check_for_updates()
+        self.tracker.retry_onvif_setup()
+
+        self.assertFalse(self._autotracking())
+        self.tracker.dispatcher.publish.assert_not_called()
+
+    def test_onvif_config_change_keeps_the_retry(self) -> None:
+        # new ONVIF settings re-initialize the camera, which may now connect
+        self.tracker.config_subscriber.check_for_updates.return_value = {
+            "onvif": [CAMERA]
+        }
+
+        self.tracker.check_for_updates()
+
+        self.assertIs(self.tracker.onvif_setup_retries[CAMERA], self.retry)
+
+    def test_removed_camera_drops_the_retry(self) -> None:
+        probe = self._probe_returns(return_value={})
+        del self.tracker.config.cameras[CAMERA]
+
+        self.tracker.retry_onvif_setup()
+
+        probe.assert_not_called()
+        self.assertNotIn(CAMERA, self.tracker.onvif_setup_retries)
 
 
 if __name__ == "__main__":

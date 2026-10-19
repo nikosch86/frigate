@@ -557,9 +557,10 @@ class OnvifController:
 
         self.cams[camera_name]["features"] = supported_features
 
+        # not gated on the runtime value, since autotracking can be switched back on
+        # without initializing ONVIF again
         if (
             self.config.cameras[camera_name].onvif.autotracking.enabled_in_config
-            and self.config.cameras[camera_name].onvif.autotracking.enabled
             and self.config.cameras[camera_name].onvif.autotracking.zooming
             == ZoomingModeEnum.continuous
         ):

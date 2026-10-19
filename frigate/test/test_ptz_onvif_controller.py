@@ -694,6 +694,17 @@ class TestInitOnvifContinuousZoomGuard(unittest.TestCase):
         self.assertEqual(controller.cams[CAMERA]["features"], ["pt"])
         self.assertEqual(autotracking.zooming, ZoomingModeEnum.disabled)
 
+    def test_continuous_zoom_disabled_while_autotracking_is_off(self) -> None:
+        # ONVIF can come back while autotracking is off after a failed setup, and
+        # autotracking is switched back on without initializing ONVIF again
+        autotracking = _autotracking(ZoomingModeEnum.continuous)
+        autotracking.enabled = False
+        controller = _make_init_controller(autotracking=autotracking, zoom_space=None)
+
+        self.assertTrue(asyncio.run(controller._init_onvif(CAMERA)))
+
+        self.assertEqual(autotracking.zooming, ZoomingModeEnum.disabled)
+
     def test_disabled_zooming_is_left_alone(self) -> None:
         autotracking = _autotracking(ZoomingModeEnum.disabled)
         controller = _make_init_controller(autotracking=autotracking, zoom_space=None)

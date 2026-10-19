@@ -6,6 +6,8 @@ import logging
 import threading
 import time
 from collections import deque
+from concurrent.futures import Future
+from dataclasses import dataclass
 from multiprocessing.synchronize import Event as MpEvent
 from typing import Any
 
@@ -29,6 +31,8 @@ from frigate.const import (
     AUTOTRACKING_MAX_MOVE_METRICS,
     AUTOTRACKING_MOTION_MAX_POINTS,
     AUTOTRACKING_MOTION_MIN_DISTANCE,
+    AUTOTRACKING_ONVIF_RETRY_MAX_DELAY,
+    AUTOTRACKING_ONVIF_RETRY_MIN_DELAY,
     AUTOTRACKING_ZOOM_EDGE_THRESHOLD,
     AUTOTRACKING_ZOOM_IN_HYSTERESIS,
     AUTOTRACKING_ZOOM_OUT_HYSTERESIS,
@@ -66,6 +70,15 @@ def transform_is_finite(coord_transformations) -> bool:
         if value is not None and not np.all(np.isfinite(value)):
             return False
     return True
+
+
+@dataclass
+class OnvifSetupRetry:
+    """A pending re-enable of autotracking that setup disabled when ONVIF failed."""
+
+    delay: float
+    next_attempt: float
+    attempt: Future | None = None
 
 
 class PtzMotionEstimator:
@@ -199,6 +212,7 @@ class PtzAutoTrackerThread(threading.Thread):
     def run(self):
         while not self.stop_event.wait(1):
             self.ptz_autotracker.check_for_updates()
+            self.ptz_autotracker.retry_onvif_setup()
 
             for camera, camera_config in list(self.config.cameras.items()):
                 if not camera_config.enabled:
@@ -261,6 +275,7 @@ class PtzAutoTracker:
         self.native_zoom_range: dict[
             str, tuple[float, float]
         ] = {}  # Native zoom range in camera units (e.g., 1-30 for 30x camera)
+        self.onvif_setup_retries: dict[str, OnvifSetupRetry] = {}
 
         self.config_subscriber = CameraConfigUpdateSubscriber(
             self.config,
@@ -311,6 +326,69 @@ class PtzAutoTracker:
                     camera_config.onvif.autotracking.enabled
                 )
 
+        # a user switching autotracking off must not be overridden once an
+        # unreachable camera comes back. Switching it on keeps the retry, since the
+        # setup that follows may have failed and scheduled it already
+        for camera in updates.get(CameraConfigUpdateEnum.autotracking.name, []):
+            camera_config = self.config.cameras.get(camera)
+            if camera_config is None or not camera_config.onvif.autotracking.enabled:
+                self.onvif_setup_retries.pop(camera, None)
+
+    def retry_onvif_setup(self) -> None:
+        """Re-enable autotracking that setup disabled because ONVIF failed.
+
+        The probe runs on the ONVIF loop without being waited on, because an
+        unreachable camera can take seconds to time out and this thread also
+        maintains the other cameras.
+        """
+        now = time.monotonic()
+
+        for camera, retry in list(self.onvif_setup_retries.items()):
+            if camera not in self.config.cameras:
+                del self.onvif_setup_retries[camera]
+                continue
+
+            if retry.attempt is None:
+                if now >= retry.next_attempt:
+                    retry.attempt = asyncio.run_coroutine_threadsafe(
+                        self.onvif.get_camera_info(camera), self.onvif.loop
+                    )
+                continue
+
+            if not retry.attempt.done():
+                continue
+
+            if retry.attempt.exception() is None and retry.attempt.result():
+                del self.onvif_setup_retries[camera]
+                logger.info("Re-enabling autotracking for %s: onvif is back", camera)
+                # setup runs again on the next tracked object, as after a manual ON
+                self.config.cameras[camera].onvif.autotracking.enabled = True
+                self.ptz_metrics[camera].autotracker_enabled.value = True
+                self.ptz_metrics[camera].start_time.value = 0
+                self.dispatcher.publish(
+                    f"{camera}/ptz_autotracker/state", "ON", retain=True
+                )
+            else:
+                retry.attempt = None
+                retry.delay = min(retry.delay * 2, AUTOTRACKING_ONVIF_RETRY_MAX_DELAY)
+                retry.next_attempt = now + retry.delay
+
+    def _disable_autotracking(self, camera_config: CameraConfig, camera: str) -> None:
+        """Turn autotracking off and publish it, so MQTT and the UI match."""
+        camera_config.onvif.autotracking.enabled = False
+        self.ptz_metrics[camera].autotracker_enabled.value = False
+        self.dispatcher.publish(f"{camera}/ptz_autotracker/state", "OFF", retain=True)
+
+    def _disable_until_onvif_returns(
+        self, camera_config: CameraConfig, camera: str
+    ) -> None:
+        """Turn autotracking off and retry ONVIF, for a camera unreachable at setup."""
+        self._disable_autotracking(camera_config, camera)
+        self.onvif_setup_retries[camera] = OnvifSetupRetry(
+            delay=AUTOTRACKING_ONVIF_RETRY_MIN_DELAY,
+            next_attempt=time.monotonic() + AUTOTRACKING_ONVIF_RETRY_MIN_DELAY,
+        )
+
     async def _autotracker_setup(self, camera_config: CameraConfig, camera: str):
         logger.debug(f"{camera}: Autotracker init")
 
@@ -340,8 +418,7 @@ class PtzAutoTracker:
             logger.warning(
                 f"Disabling autotracking for {camera}: onvif connection failed"
             )
-            camera_config.onvif.autotracking.enabled = False
-            self.ptz_metrics[camera].autotracker_enabled.value = False
+            self._disable_until_onvif_returns(camera_config, camera)
             return
 
         if not self.onvif.cams[camera]["init"]:
@@ -349,90 +426,81 @@ class PtzAutoTracker:
                 logger.warning(
                     f"Disabling autotracking for {camera}: Unable to initialize onvif"
                 )
-                camera_config.onvif.autotracking.enabled = False
-                self.ptz_metrics[camera].autotracker_enabled.value = False
+                self._disable_until_onvif_returns(camera_config, camera)
                 return
 
-            # Determine which movement mode this camera supports
-            if "pt-r-fov" in self.onvif.cams[camera]["features"]:
-                self.movement_mode[camera] = "relative_fov"
-                logger.info(f"{camera}: Using RelativeMove (FOV) for autotracking")
+        # Determine which movement mode this camera supports, even when ONVIF was
+        # initialized elsewhere, such as by a UI PTZ info request after a failed setup
+        if "pt-r-fov" in self.onvif.cams[camera]["features"]:
+            self.movement_mode[camera] = "relative_fov"
+            logger.info(f"{camera}: Using RelativeMove (FOV) for autotracking")
 
-            elif "pt" in self.onvif.cams[camera]["features"]:
-                self.movement_mode[camera] = "continuous_timed"
-                self.continuous_speed[camera] = (
-                    camera_config.onvif.autotracking.continuous_speed
-                )
-                self.continuous_zoom_speed[camera] = (
-                    camera_config.onvif.autotracking.continuous_zoom_speed
-                )
-                logger.info(
-                    f"{camera}: Using ContinuousMove (timed) for autotracking - "
-                    f"speed={self.continuous_speed[camera]:.1f} FOV units/sec - "
-                    f"precision may be lower than RelativeMove, calibration recommended"
-                )
+        elif "pt" in self.onvif.cams[camera]["features"]:
+            self.movement_mode[camera] = "continuous_timed"
+            self.continuous_speed[camera] = (
+                camera_config.onvif.autotracking.continuous_speed
+            )
+            self.continuous_zoom_speed[camera] = (
+                camera_config.onvif.autotracking.continuous_zoom_speed
+            )
+            logger.info(
+                f"{camera}: Using ContinuousMove (timed) for autotracking - "
+                f"speed={self.continuous_speed[camera]:.1f} FOV units/sec - "
+                f"precision may be lower than RelativeMove, calibration recommended"
+            )
 
-                if (
-                    camera_config.onvif.autotracking.zooming
-                    == ZoomingModeEnum.continuous
-                ):
-                    if "zoom" in self.onvif.cams[camera]["features"]:
-                        logger.info(
-                            f"{camera}: Using continuous zoom for zoom control - "
-                            f"zoom_speed={self.continuous_zoom_speed[camera]:.1f} units/sec"
-                        )
-                    else:
-                        logger.warning(
-                            f"{camera}: Continuous zoom configured but not supported"
-                        )
-                elif (
-                    camera_config.onvif.autotracking.zooming == ZoomingModeEnum.absolute
-                ):
-                    if "zoom-a" in self.onvif.cams[camera]["features"]:
-                        logger.info(
-                            f"{camera}: Using absolute zoom (zoom-a) for zoom control"
-                        )
-                    else:
-                        logger.warning(
-                            f"{camera}: Absolute zoom configured but not supported"
-                        )
-                elif (
-                    camera_config.onvif.autotracking.zooming == ZoomingModeEnum.relative
-                ):
-                    if "zoom-r" in self.onvif.cams[camera]["features"]:
-                        logger.info(
-                            f"{camera}: Using relative zoom (zoom-r) for zoom control"
-                        )
-                    else:
-                        logger.warning(
-                            f"{camera}: Relative zoom configured but not supported"
-                        )
+            if camera_config.onvif.autotracking.zooming == ZoomingModeEnum.continuous:
+                if "zoom" in self.onvif.cams[camera]["features"]:
+                    logger.info(
+                        f"{camera}: Using continuous zoom for zoom control - "
+                        f"zoom_speed={self.continuous_zoom_speed[camera]:.1f} units/sec"
+                    )
                 else:
-                    logger.info(f"{camera}: Zooming disabled for autotracking")
-
+                    logger.warning(
+                        f"{camera}: Continuous zoom configured but not supported"
+                    )
+            elif camera_config.onvif.autotracking.zooming == ZoomingModeEnum.absolute:
+                if "zoom-a" in self.onvif.cams[camera]["features"]:
+                    logger.info(
+                        f"{camera}: Using absolute zoom (zoom-a) for zoom control"
+                    )
+                else:
+                    logger.warning(
+                        f"{camera}: Absolute zoom configured but not supported"
+                    )
+            elif camera_config.onvif.autotracking.zooming == ZoomingModeEnum.relative:
+                if "zoom-r" in self.onvif.cams[camera]["features"]:
+                    logger.info(
+                        f"{camera}: Using relative zoom (zoom-r) for zoom control"
+                    )
+                else:
+                    logger.warning(
+                        f"{camera}: Relative zoom configured but not supported"
+                    )
             else:
-                logger.warning(
-                    f"Disabling autotracking for {camera}: "
-                    f"No supported movement method (need pt-r-fov or pt)"
-                )
-                camera_config.onvif.autotracking.enabled = False
-                self.ptz_metrics[camera].autotracker_enabled.value = False
-                return
+                logger.info(f"{camera}: Zooming disabled for autotracking")
 
-            move_status_supported = await self.onvif.get_service_capabilities(camera)
+        else:
+            logger.warning(
+                f"Disabling autotracking for {camera}: "
+                f"No supported movement method (need pt-r-fov or pt)"
+            )
+            self._disable_autotracking(camera_config, camera)
+            return
 
-            if not (
-                isinstance(move_status_supported, bool) and move_status_supported
-            ) and not (
-                isinstance(move_status_supported, str)
-                and move_status_supported.lower() == "true"
-            ):
-                logger.warning(
-                    f"Disabling autotracking for {camera}: ONVIF MoveStatus not supported"
-                )
-                camera_config.onvif.autotracking.enabled = False
-                self.ptz_metrics[camera].autotracker_enabled.value = False
-                return
+        move_status_supported = await self.onvif.get_service_capabilities(camera)
+
+        if not (
+            isinstance(move_status_supported, bool) and move_status_supported
+        ) and not (
+            isinstance(move_status_supported, str)
+            and move_status_supported.lower() == "true"
+        ):
+            logger.warning(
+                f"Disabling autotracking for {camera}: ONVIF MoveStatus not supported"
+            )
+            self._disable_autotracking(camera_config, camera)
+            return
 
         if self.onvif.cams[camera]["init"]:
             await self.onvif.get_camera_status(camera)
@@ -534,8 +602,7 @@ class PtzAutoTracker:
                         camera_config.onvif.autotracking.movement_weights[5]
                     )
                 else:
-                    camera_config.onvif.autotracking.enabled = False
-                    self.ptz_metrics[camera].autotracker_enabled.value = False
+                    self._disable_autotracking(camera_config, camera)
                     logger.warning(
                         f"Autotracker recalibration is required for {camera}. Disabling autotracking."
                     )

@@ -316,3 +316,11 @@ When the PTZ moves, the entire frame changes at once. Frigate's motion detection
 Yes. Autotracking can be toggled per camera at runtime over MQTT with the [`frigate/<camera_name>/ptz_autotracker/set`](../integrations/mqtt.md#frigatecamera_nameptz_autotrackerset) topic, and the [Home Assistant integration](../integrations/home-assistant.md) exposes a switch for it. This pairs well with the "spotter" camera automations described in [Usage applications](#usage-applications) above, for example only enabling autotracking at night or when nobody is home.
 
 </FaqItem>
+
+<FaqItem id="autotracking-turned-itself-off-why" question="Autotracking turned itself off. Why?">
+
+Frigate turns autotracking off when it cannot set it up for a camera, and logs a `Disabling autotracking for <camera>` warning with the reason. The `ptz_autotracker/state` topic then reports `OFF`.
+
+If the reason is that the camera could not be reached over ONVIF, for example because it was offline when Frigate started, Frigate keeps retrying ONVIF in the background, every 30 seconds at first and backing off to every 5 minutes. Once the camera answers, it logs `Re-enabling autotracking for <camera>: onvif is back` and turns autotracking back on. If you switch autotracking off in the meantime, it stays off. Other reasons, such as a camera without a supported movement mode or without `MoveStatus` support, are not retried.
+
+</FaqItem>
