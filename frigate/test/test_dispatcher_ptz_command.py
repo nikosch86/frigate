@@ -3,6 +3,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+from frigate.camera import PTZMetrics
 from frigate.comms.dispatcher import Dispatcher
 from frigate.ptz.onvif import OnvifCommandEnum
 
@@ -68,3 +69,20 @@ class TestOnPtzCommand(unittest.TestCase):
         self.dispatcher._on_ptz_command("front", "spin_around")
 
         self.handle_command.assert_not_called()
+
+
+class TestOnPtzAutotrackerCommand(unittest.TestCase):
+    def test_off_while_already_off_publishes_disabled_settings(self) -> None:
+        # a failed setup leaves autotracking off, and the autotracker cancels its
+        # ONVIF retry only when this update says off. After a config save the
+        # dispatcher holds a fresh parse that still says on
+        dispatcher = _build_dispatcher()
+        dispatcher.ptz_metrics = {"front": PTZMetrics(autotracker_enabled=False)}
+        settings = dispatcher.config.cameras["front"].onvif.autotracking
+        settings.enabled = True
+
+        dispatcher._on_ptz_autotracker_command("front", "OFF")
+
+        topic, payload = dispatcher.config_updater.publish_update.call_args.args
+        self.assertEqual(topic.topic, "config/cameras/front/autotracking")
+        self.assertFalse(payload.enabled)

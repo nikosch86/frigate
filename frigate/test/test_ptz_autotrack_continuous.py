@@ -1,6 +1,7 @@
 """Tests for the ContinuousMove and continuous-zoom paths of PtzAutoTracker."""
 
 import asyncio
+import concurrent.futures
 import time
 import unittest
 from collections import deque
@@ -12,11 +13,8 @@ import numpy as np
 from frigate.camera import PTZMetrics
 from frigate.config import ZoomingModeEnum
 from frigate.config.camera.onvif import PtzAutotrackConfig
-from frigate.const import (
-    AUTOTRACKING_MAX_AREA_RATIO,
-    AUTOTRACKING_ONVIF_RETRY_MIN_DELAY,
-)
-from frigate.ptz.autotrack import PtzAutoTracker
+from frigate.const import AUTOTRACKING_MAX_AREA_RATIO
+from frigate.ptz.autotrack import OnvifSetupRetry, PtzAutoTracker
 
 CAMERA = "front"
 ZOOM_FACTOR = 0.3
@@ -58,6 +56,7 @@ def _make_tracker(
 
     onvif = MagicMock()
     onvif.cams = {CAMERA: {"init": True, "features": list(features)}}
+    onvif.camera_configs = {CAMERA: camera_config}
     onvif.loop = MagicMock()
     for name in (
         "get_camera_status",
@@ -136,7 +135,8 @@ def _run_setup(
     *,
     onvif_initialized: bool = False,
     onvif_init_succeeds: bool = True,
-    move_status: bool = True,
+    move_status: bool | None = True,
+    while_init=None,
 ) -> None:
     # start uninitialized by default and let the mocked init flip the flag, the
     # way setup finds a camera at startup
@@ -144,6 +144,8 @@ def _run_setup(
     cam["init"] = onvif_initialized
 
     async def init_onvif(camera):
+        if while_init:
+            while_init()
         cam["init"] = onvif_init_succeeds
         return onvif_init_succeeds
 
@@ -224,7 +226,61 @@ class TestAutotrackerSetupMovementMode(unittest.TestCase):
         _run_setup(tracker, onvif_initialized=True, move_status=False)
 
         self.assertFalse(_config(tracker).enabled)
+        tracker.dispatcher.publish.assert_called_once_with(
+            f"{CAMERA}/ptz_autotracker/state", "OFF", retain=True
+        )
         self.assertNotIn(CAMERA, tracker.onvif_setup_retries)
+
+    def test_invalid_movement_weights_disable_without_retry(self) -> None:
+        tracker = _make_tracker(
+            features=("pt", "pt-r-fov"), zooming=ZoomingModeEnum.disabled
+        )
+        # the config validator rejects these, so set them past it
+        _config(tracker).movement_weights = [0.1] * 5
+
+        _run_setup(tracker)
+
+        self.assertFalse(_config(tracker).enabled)
+        tracker.dispatcher.publish.assert_any_call(
+            f"{CAMERA}/ptz_autotracker/state", "OFF", retain=True
+        )
+        self.assertNotIn(CAMERA, tracker.onvif_setup_retries)
+
+    def test_next_tracked_object_sets_up_a_restored_camera(self) -> None:
+        # a restore leaves setup to the next tracked object, with ONVIF already
+        # initialized by the probe
+        tracker = _make_tracker(
+            features=("pt", "pt-r-fov"), zooming=ZoomingModeEnum.disabled
+        )
+        tracker.autotracker_init[CAMERA] = False
+        tracker.onvif.get_service_capabilities = AsyncMock(return_value=True)
+        car = SimpleNamespace(
+            camera_config=SimpleNamespace(name=CAMERA),
+            obj_data={"id": "car-1", "label": "car", "frame_time": 10.0},
+            entered_zones=[],
+            previous={"false_positive": False},
+            false_positive=False,
+            active=True,
+        )
+
+        def run_now(coro, loop):
+            future = concurrent.futures.Future()
+            # the move queue consumer never returns, so do not start it
+            if coro.cr_code.co_name == "_process_move_queue":
+                coro.close()
+            else:
+                future.set_result(asyncio.run(coro))
+            return future
+
+        with patch(
+            "frigate.ptz.autotrack.asyncio.run_coroutine_threadsafe",
+            side_effect=run_now,
+        ):
+            tracker.autotrack_object(CAMERA, car)
+
+        tracker.onvif._init_onvif.assert_not_awaited()
+        self.assertEqual(tracker.movement_mode[CAMERA], "relative_fov")
+        self.assertTrue(tracker.autotracker_init[CAMERA])
 
 
 class TestAutotrackerSetupOnvifFailure(unittest.TestCase):
@@ -234,13 +290,10 @@ class TestAutotrackerSetupOnvifFailure(unittest.TestCase):
         tracker.dispatcher.publish.assert_called_once_with(
             f"{CAMERA}/ptz_autotracker/state", "OFF", retain=True
         )
+        # the plan starts the backoff at 30 seconds
         retry = tracker.onvif_setup_retries[CAMERA]
-        self.assertEqual(retry.delay, AUTOTRACKING_ONVIF_RETRY_MIN_DELAY)
-        self.assertAlmostEqual(
-            retry.next_attempt - time.monotonic(),
-            AUTOTRACKING_ONVIF_RETRY_MIN_DELAY,
-            delta=1,
-        )
+        self.assertEqual(retry.delay, 30)
+        self.assertAlmostEqual(retry.next_attempt - time.monotonic(), 30, delta=1)
 
     def test_unreachable_camera_is_retried(self) -> None:
         tracker = _make_tracker()
@@ -258,6 +311,56 @@ class TestAutotrackerSetupOnvifFailure(unittest.TestCase):
 
         self._assert_disabled_until_onvif_returns(tracker)
         tracker.onvif._init_onvif.assert_not_awaited()
+
+    def test_camera_unreachable_at_move_status_check_is_retried(self) -> None:
+        # setup can run hours after the probe, on the next tracked object, and the
+        # camera may have dropped again in between
+        tracker = _make_tracker()
+
+        _run_setup(tracker, onvif_initialized=True, move_status=None)
+
+        self._assert_disabled_until_onvif_returns(tracker)
+
+    def test_camera_unknown_to_onvif_is_not_retried(self) -> None:
+        # a camera added at runtime gets no ONVIF client or config, so a probe
+        # could never succeed
+        tracker = _make_tracker()
+        del tracker.onvif.cams[CAMERA]
+        tracker.onvif.camera_configs = {}
+
+        _run_setup(tracker)
+
+        self.assertFalse(_config(tracker).enabled)
+        self.assertNotIn(CAMERA, tracker.onvif_setup_retries)
+
+    def test_switch_off_while_setup_waits_is_not_retried(self) -> None:
+        # a user turning autotracking off while setup waited on the unreachable
+        # camera must not be overridden once it answers
+        tracker = _make_tracker()
+
+        def switch_off() -> None:
+            _config(tracker).enabled = False
+
+        _run_setup(tracker, onvif_init_succeeds=False, while_init=switch_off)
+
+        self.assertFalse(_config(tracker).enabled)
+        self.assertNotIn(CAMERA, tracker.onvif_setup_retries)
+
+    def test_reachable_camera_clears_a_pending_retry(self) -> None:
+        # a manual ON keeps the retry, and the setup that follows can reach the
+        # camera, whether it then succeeds or hits a permanent failure
+        for features in (("pt", "pt-r-fov"), ("zoom",)):
+            with self.subTest(features=features):
+                tracker = _make_tracker(
+                    features=features, zooming=ZoomingModeEnum.disabled
+                )
+                tracker.onvif_setup_retries[CAMERA] = OnvifSetupRetry(
+                    delay=60, next_attempt=0
+                )
+
+                _run_setup(tracker)
+
+                self.assertNotIn(CAMERA, tracker.onvif_setup_retries)
 
     def test_continuous_zoom_without_zoom_feature_keeps_moving(self) -> None:
         tracker = _make_tracker(features=("pt",), zooming=ZoomingModeEnum.continuous)

@@ -656,13 +656,15 @@ class Dispatcher:
                 logger.info(f"Turning on ptz autotracker for {camera_name}")
                 self.ptz_metrics[camera_name].autotracker_enabled.value = True
                 self.ptz_metrics[camera_name].start_time.value = 0
-                ptz_autotracker_settings.enabled = True
+            # set even when the metric already matches: after a config save this
+            # object is a fresh parse that may not match it, and it is published
+            ptz_autotracker_settings.enabled = True
         elif payload == "OFF":
             if self.ptz_metrics[camera_name].autotracker_enabled.value:
                 logger.info(f"Turning off ptz autotracker for {camera_name}")
                 self.ptz_metrics[camera_name].autotracker_enabled.value = False
                 self.ptz_metrics[camera_name].start_time.value = 0
-                ptz_autotracker_settings.enabled = False
+            ptz_autotracker_settings.enabled = False
 
         self.config_updater.publish_update(
             CameraConfigUpdateTopic(CameraConfigUpdateEnum.autotracking, camera_name),

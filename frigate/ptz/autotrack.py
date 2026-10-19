@@ -344,8 +344,15 @@ class PtzAutoTracker:
         now = time.monotonic()
 
         for camera, retry in list(self.onvif_setup_retries.items()):
-            if camera not in self.config.cameras:
-                del self.onvif_setup_retries[camera]
+            camera_config = self.config.cameras.get(camera)
+
+            # the same rule as a manual ON, and a config save can drop autotracking
+            # without an autotracking update
+            if (
+                camera_config is None
+                or not camera_config.onvif.autotracking.enabled_in_config
+            ):
+                self.onvif_setup_retries.pop(camera, None)
                 continue
 
             if retry.attempt is None:
@@ -359,10 +366,11 @@ class PtzAutoTracker:
                 continue
 
             if retry.attempt.exception() is None and retry.attempt.result():
-                del self.onvif_setup_retries[camera]
+                # setup also removes the retry, from the ONVIF loop thread
+                self.onvif_setup_retries.pop(camera, None)
                 logger.info("Re-enabling autotracking for %s: onvif is back", camera)
                 # setup runs again on the next tracked object, as after a manual ON
-                self.config.cameras[camera].onvif.autotracking.enabled = True
+                camera_config.onvif.autotracking.enabled = True
                 self.ptz_metrics[camera].autotracker_enabled.value = True
                 self.ptz_metrics[camera].start_time.value = 0
                 self.dispatcher.publish(
@@ -383,7 +391,17 @@ class PtzAutoTracker:
         self, camera_config: CameraConfig, camera: str
     ) -> None:
         """Turn autotracking off and retry ONVIF, for a camera unreachable at setup."""
+        # a user switching autotracking off while setup waited on the camera wins,
+        # and a camera added at runtime has no ONVIF config, so probing cannot work
+        retry = (
+            camera_config.onvif.autotracking.enabled
+            and camera in self.onvif.camera_configs
+        )
         self._disable_autotracking(camera_config, camera)
+
+        if not retry:
+            return
+
         self.onvif_setup_retries[camera] = OnvifSetupRetry(
             delay=AUTOTRACKING_ONVIF_RETRY_MIN_DELAY,
             next_attempt=time.monotonic() + AUTOTRACKING_ONVIF_RETRY_MIN_DELAY,
@@ -428,6 +446,9 @@ class PtzAutoTracker:
                 )
                 self._disable_until_onvif_returns(camera_config, camera)
                 return
+
+        # the camera answers, so a retry left by an earlier failed setup is stale
+        self.onvif_setup_retries.pop(camera, None)
 
         # Determine which movement mode this camera supports, even when ONVIF was
         # initialized elsewhere, such as by a UI PTZ info request after a failed setup
@@ -489,6 +510,11 @@ class PtzAutoTracker:
             return
 
         move_status_supported = await self.onvif.get_service_capabilities(camera)
+
+        if move_status_supported is None:
+            logger.warning(f"Disabling autotracking for {camera}: onvif unreachable")
+            self._disable_until_onvif_returns(camera_config, camera)
+            return
 
         if not (
             isinstance(move_status_supported, bool) and move_status_supported

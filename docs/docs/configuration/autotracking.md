@@ -24,7 +24,7 @@ When tracking has ended, Frigate will return to the camera firmware's PTZ preset
 
 Frigate autotracking functions with PTZ cameras capable of relative movement within the field of view (as specified in the [ONVIF spec](https://www.onvif.org/specs/srv/ptz/ONVIF-PTZ-Service-Spec-v1712.pdf) as `RelativePanTiltTranslationSpace` having a `TranslationSpaceFov` entry).
 
-Many cheaper or older PTZs do not support this standard but do support `ContinuousMove`, which is what the manual PTZ controls use. This fork autotracks such cameras with timed `ContinuousMove` commands: the distance to the tracked object is converted into a movement duration using `continuous_speed`. Position is estimated from timing, so small drift can accumulate during a tracking session; it is corrected each time the camera returns to `return_preset`. Frigate logs which movement mode is in use at startup and disables autotracking only if neither mode is supported.
+Many cheaper or older PTZs do not support this standard but do support `ContinuousMove`, which is what the manual PTZ controls use. This fork autotracks such cameras with timed `ContinuousMove` commands: the distance to the tracked object is converted into a movement duration using `continuous_speed`. Position is estimated from timing, so small drift can accumulate during a tracking session; it is corrected each time the camera returns to `return_preset`. Frigate logs which movement mode is in use when it sets up autotracking, and disables autotracking if neither mode is supported.
 
 The FeatureList on the [ONVIF Conformant Products Database](https://www.onvif.org/conformant-products/) can provide a starting point to determine a camera's compatibility with Frigate's autotracking. Look to see if a camera lists `PTZRelative`, `PTZRelativePanTilt` and/or `PTZRelativeZoom`. These features are required for autotracking, but some cameras still fail to respond even if they claim support.
 
@@ -319,8 +319,8 @@ Yes. Autotracking can be toggled per camera at runtime over MQTT with the [`frig
 
 <FaqItem id="autotracking-turned-itself-off-why" question="Autotracking turned itself off. Why?">
 
-Frigate turns autotracking off when it cannot set it up for a camera, and logs a `Disabling autotracking for <camera>` warning with the reason. The `ptz_autotracker/state` topic then reports `OFF`.
+Frigate turns autotracking off when it cannot set it up for a camera, and logs a warning with the reason. The `ptz_autotracker/state` topic then reports `OFF`.
 
-If the reason is that the camera could not be reached over ONVIF, for example because it was offline when Frigate started, Frigate keeps retrying ONVIF in the background, every 30 seconds at first and backing off to every 5 minutes. Once the camera answers, it logs `Re-enabling autotracking for <camera>: onvif is back` and turns autotracking back on. If you switch autotracking off in the meantime, it stays off. Other reasons, such as a camera without a supported movement mode or without `MoveStatus` support, are not retried.
+If the reason is that the camera could not be reached over ONVIF, for example because it was offline when Frigate started, Frigate keeps retrying ONVIF in the background, first after 30 seconds, then doubling up to every 5 minutes. Once the camera answers, it logs `Re-enabling autotracking for <camera>: onvif is back` and turns autotracking back on. Setup, including `calibrate_on_startup`, then runs when the camera next sees a tracked object. If you switch autotracking off in the meantime, or disable it in the config, it stays off. Other reasons, such as a camera without a supported movement mode or without `MoveStatus` support, are not retried.
 
 </FaqItem>

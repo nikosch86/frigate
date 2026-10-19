@@ -6,6 +6,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
+from zeep.exceptions import Fault
+
 from frigate.camera import PTZMetrics
 from frigate.config import ZoomingModeEnum
 from frigate.config.camera.onvif import PtzAutotrackConfig
@@ -714,6 +717,40 @@ class TestInitOnvifContinuousZoomGuard(unittest.TestCase):
         self.assertEqual(autotracking.zooming, ZoomingModeEnum.disabled)
 
 
+class TestGetServiceCapabilities(unittest.TestCase):
+    def _controller(self, error: Exception) -> OnvifController:
+        controller = _make_controller()
+        cam = controller.cams[CAMERA]
+        cam["service_capabilities_request"] = MagicMock()
+        cam["ptz"].GetServiceCapabilities = AsyncMock(side_effect=error)
+        return controller
+
+    def test_unreachable_camera_is_not_reported_unsupported(self) -> None:
+        # an offline camera must be retried, not disabled for good, and the cached
+        # init would let the retry probe succeed without contacting it
+        for error in (
+            aiohttp.ClientConnectionError("refused"),
+            aiohttp.ServerDisconnectedError(),
+            TimeoutError("timed out"),
+            OSError("no route to host"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                controller = self._controller(error)
+
+                result = asyncio.run(controller.get_service_capabilities(CAMERA))
+
+                self.assertIsNone(result)
+                self.assertFalse(controller.cams[CAMERA]["init"])
+
+    def test_camera_rejecting_the_call_is_unsupported(self) -> None:
+        controller = self._controller(Fault("not implemented"))
+
+        result = asyncio.run(controller.get_service_capabilities(CAMERA))
+
+        self.assertIs(result, False)
+        self.assertTrue(controller.cams[CAMERA]["init"])
+
+
 class TestInitOnvifRelativeZoomSpaceGuard(unittest.TestCase):
     def test_missing_relative_zoom_space_keeps_continuous_zoom(self) -> None:
         autotracking = _autotracking(ZoomingModeEnum.continuous)
@@ -743,6 +780,21 @@ class TestInitOnvifRelativeZoomSpaceGuard(unittest.TestCase):
         self.assertTrue(
             any("Relative zoom space not available" in line for line in logs.output)
         )
+
+    def test_relative_zoom_space_checked_while_autotracking_is_off(self) -> None:
+        # the background probe initializes ONVIF while autotracking is off, and
+        # autotracking is switched back on without initializing it again
+        autotracking = _autotracking(ZoomingModeEnum.relative)
+        autotracking.enabled = False
+        controller = _make_init_controller(
+            autotracking=autotracking,
+            relative_pan_tilt_space="pt-translation-space",
+            ptz_config=_fov_ptz_config(with_generic_zoom_space=True),
+        )
+
+        self.assertTrue(asyncio.run(controller._init_onvif(CAMERA)))
+
+        self.assertEqual(autotracking.zooming, ZoomingModeEnum.disabled)
 
     def test_unusable_relative_zoom_space_disables_relative_zoom(self) -> None:
         autotracking = _autotracking(ZoomingModeEnum.relative)

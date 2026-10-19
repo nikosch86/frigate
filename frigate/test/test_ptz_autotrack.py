@@ -22,8 +22,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 from frigate.camera import PTZMetrics
 from frigate.config import FrigateConfig
-from frigate.const import AUTOTRACKING_ONVIF_RETRY_MAX_DELAY
-from frigate.ptz.autotrack import OnvifSetupRetry, PtzAutoTracker
+from frigate.ptz.autotrack import (
+    OnvifSetupRetry,
+    PtzAutoTracker,
+    PtzAutoTrackerThread,
+)
 
 CAMERA = "ptz_cam"
 
@@ -143,7 +146,9 @@ class TestAutotrackerOnvifRetry(unittest.TestCase):
         self.loop_thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.loop_thread.start()
 
-        self.tracker = _make_tracker(autotracking_enabled=False)
+        # as setup leaves it: configured on, switched off at runtime
+        self.tracker = _make_tracker(autotracking_enabled=True)
+        self.tracker.config.cameras[CAMERA].onvif.autotracking.enabled = False
         self.tracker.onvif.loop = self.loop
         self.tracker.autotracker_init[CAMERA] = False
         self.tracker.ptz_metrics[CAMERA].start_time.value = 5.0
@@ -182,7 +187,7 @@ class TestAutotrackerOnvifRetry(unittest.TestCase):
             f"{CAMERA}/ptz_autotracker/state", "ON", retain=True
         )
         self.assertNotIn(CAMERA, self.tracker.onvif_setup_retries)
-        # setup runs again on the next tracked object, as after a manual ON
+        # the restore leaves setup to the next tracked object, as after a manual ON
         self.assertFalse(self.tracker.autotracker_init[CAMERA])
 
     def test_backs_off_while_onvif_is_unreachable(self) -> None:
@@ -208,11 +213,12 @@ class TestAutotrackerOnvifRetry(unittest.TestCase):
 
     def test_backoff_is_capped(self) -> None:
         self._probe_returns(return_value={})
-        self.retry.delay = AUTOTRACKING_ONVIF_RETRY_MAX_DELAY - 1
+        self.retry.delay = 240
 
         self._finish_attempt()
 
-        self.assertEqual(self.retry.delay, AUTOTRACKING_ONVIF_RETRY_MAX_DELAY)
+        # the plan caps the backoff at 5 minutes
+        self.assertEqual(self.retry.delay, 300)
 
     def test_waits_until_the_next_attempt_is_due(self) -> None:
         probe = self._probe_returns(return_value={"name": CAMERA})
@@ -227,6 +233,8 @@ class TestAutotrackerOnvifRetry(unittest.TestCase):
         # an unreachable host can take seconds to time out, and the autotracker
         # thread also maintains the other cameras
         release = threading.Event()
+        # a failed assertion would otherwise leave the executor thread blocked
+        self.addCleanup(release.set)
 
         async def slow_probe(camera):
             await asyncio.get_running_loop().run_in_executor(None, release.wait)
@@ -296,6 +304,23 @@ class TestAutotrackerOnvifRetry(unittest.TestCase):
 
         self.assertIs(self.tracker.onvif_setup_retries[CAMERA], self.retry)
 
+    def test_config_without_autotracking_drops_the_retry(self) -> None:
+        # a UI save of the ONVIF section arrives as an onvif update, not an
+        # autotracking one
+        probe = self._probe_returns(return_value={"name": CAMERA})
+        self.tracker.config.cameras[CAMERA].onvif.autotracking.enabled_in_config = False
+        self.tracker.config_subscriber.check_for_updates.return_value = {
+            "onvif": [CAMERA]
+        }
+
+        self.tracker.check_for_updates()
+        self.tracker.retry_onvif_setup()
+
+        probe.assert_not_called()
+        self.assertFalse(self._autotracking())
+        self.tracker.dispatcher.publish.assert_not_called()
+        self.assertNotIn(CAMERA, self.tracker.onvif_setup_retries)
+
     def test_removed_camera_drops_the_retry(self) -> None:
         probe = self._probe_returns(return_value={})
         del self.tracker.config.cameras[CAMERA]
@@ -304,6 +329,22 @@ class TestAutotrackerOnvifRetry(unittest.TestCase):
 
         probe.assert_not_called()
         self.assertNotIn(CAMERA, self.tracker.onvif_setup_retries)
+
+
+class TestAutotrackerThreadTick(unittest.TestCase):
+    def test_tick_applies_updates_before_retrying_onvif(self) -> None:
+        # a user OFF applied earlier in the same tick must win over a restore
+        thread = PtzAutoTrackerThread.__new__(PtzAutoTrackerThread)
+        thread.config = MagicMock()
+        thread.config.cameras = {}
+        thread.stop_event = MagicMock()
+        thread.stop_event.wait.side_effect = [False, True]
+        thread.ptz_autotracker = MagicMock()
+
+        thread.run()
+
+        calls = [name for name, _, _ in thread.ptz_autotracker.method_calls]
+        self.assertEqual(calls[:2], ["check_for_updates", "retry_onvif_setup"])
 
 
 if __name__ == "__main__":

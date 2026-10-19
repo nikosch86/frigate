@@ -9,6 +9,7 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
+import aiohttp
 import numpy
 from onvif import ONVIFCamera, ONVIFError, ONVIFService
 from zeep.exceptions import Fault, TransportError
@@ -342,9 +343,9 @@ class OnvifController:
                 fov_space_id = None
 
         autotracking_config = self.config.cameras[camera_name].onvif.autotracking
-        autotracking_enabled = (
-            autotracking_config.enabled_in_config and autotracking_config.enabled
-        )
+        # not the runtime value, since autotracking can be switched back on without
+        # initializing ONVIF again
+        autotracking_enabled = autotracking_config.enabled_in_config
 
         # these are local and cost nothing to build, and autotracking can be enabled
         # after a camera is initialized, so always create them rather than baking the
@@ -557,12 +558,9 @@ class OnvifController:
 
         self.cams[camera_name]["features"] = supported_features
 
-        # not gated on the runtime value, since autotracking can be switched back on
-        # without initializing ONVIF again
         if (
-            self.config.cameras[camera_name].onvif.autotracking.enabled_in_config
-            and self.config.cameras[camera_name].onvif.autotracking.zooming
-            == ZoomingModeEnum.continuous
+            autotracking_enabled
+            and autotracking_config.zooming == ZoomingModeEnum.continuous
         ):
             if "zoom" not in supported_features:
                 self.config.cameras[
@@ -1228,6 +1226,12 @@ class OnvifController:
 
             # MoveStatus is required for autotracking - should return "true" if supported
             return find_by_key(vars(service_capabilities), "MoveStatus")
+        except (aiohttp.ClientConnectionError, OSError) as e:
+            # unreachable is not unsupported. Drop the init so the next ONVIF
+            # request connects again instead of trusting the cached state
+            logger.warning(f"Unable to reach {camera_name} over ONVIF: {e}")
+            self.cams[camera_name]["init"] = False
+            return None
         except Exception as e:
             logger.warning(
                 f"Camera {camera_name} does not support the ONVIF GetServiceCapabilities method. Autotracking will not function correctly and must be disabled in your config. Exception: {e}"
