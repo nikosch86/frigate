@@ -78,7 +78,12 @@ class OnvifController:
         )
 
         asyncio.run_coroutine_threadsafe(self._init_cameras(), self.loop)
-        asyncio.run_coroutine_threadsafe(self._poll_config_updates(), self.loop)
+        self.config_poll: asyncio.Task | None = None
+        self.loop.call_soon_threadsafe(self._start_config_poll)
+
+    def _start_config_poll(self) -> None:
+        """Start polling for config updates, keeping the task so close() can stop it."""
+        self.config_poll = self.loop.create_task(self._poll_config_updates())
 
     def _run_event_loop(self) -> None:
         """Run the event loop in a separate thread."""
@@ -116,15 +121,12 @@ class OnvifController:
                 logger.debug(f"Error closing ONVIF session for {cam_name}")
 
     async def _shutdown(self) -> None:
-        """Cancel the loop's background tasks and close every camera's session."""
-        tasks = [
-            task for task in asyncio.all_tasks() if task is not asyncio.current_task()
-        ]
+        """Stop the config poll and close every camera's ONVIF session."""
+        # only the poll: the autotracker runs its own tasks on this loop
+        if self.config_poll is not None:
+            self.config_poll.cancel()
+            await asyncio.wait([self.config_poll])
 
-        for task in tasks:
-            task.cancel()
-
-        await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.gather(*(self._close_camera(cam_name) for cam_name in self.cams))
 
     async def _reinit_camera(self, cam_name: str) -> None:
@@ -1408,9 +1410,9 @@ class OnvifController:
         logger.info("Exiting ONVIF controller...")
         self.config_subscriber.stop()
 
-        # finish the tasks and close the sessions while the loop still runs, or
-        # asyncio and aiohttp report them when they are garbage collected during
-        # shutdown, after the log queue has gone
+        # stop the poll and close the sessions while the loop still runs, or asyncio
+        # and aiohttp report them when they are garbage collected during shutdown,
+        # after the log queue has gone
         try:
             asyncio.run_coroutine_threadsafe(self._shutdown(), self.loop).result(
                 timeout=5
