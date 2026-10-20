@@ -115,6 +115,10 @@ class OnvifController:
             except Exception:
                 logger.debug(f"Error closing ONVIF session for {cam_name}")
 
+    async def _close_cameras(self) -> None:
+        """Close the ONVIF client sessions of every camera."""
+        await asyncio.gather(*(self._close_camera(cam_name) for cam_name in self.cams))
+
     async def _reinit_camera(self, cam_name: str) -> None:
         """Re-initialize a camera after config change."""
         logger.info(f"Re-initializing ONVIF for {cam_name} due to config change")
@@ -1395,6 +1399,15 @@ class OnvifController:
 
         logger.info("Exiting ONVIF controller...")
         self.config_subscriber.stop()
+
+        # close the sessions while the loop still runs, or aiohttp reports them as
+        # unclosed when they are garbage collected during shutdown
+        try:
+            asyncio.run_coroutine_threadsafe(self._close_cameras(), self.loop).result(
+                timeout=5
+            )
+        except TimeoutError:
+            logger.debug("Timed out closing ONVIF sessions")
 
         def stop_and_cleanup():
             try:
