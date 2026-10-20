@@ -1,8 +1,9 @@
-"""Tests for closing the ONVIF sessions when the controller shuts down.
+"""Tests for a clean ONVIF controller shutdown.
 
-Each ONVIFCamera holds aiohttp sessions. Left open, they are garbage collected
-during shutdown and logged as "Unclosed client session" after the log queue has
-already gone.
+Each ONVIFCamera holds aiohttp sessions, and the loop runs a config poll that
+never returns. Left open or pending, they are garbage collected during shutdown
+and logged as "Unclosed client session" or "Task was destroyed but it is
+pending!" after the log queue has already gone.
 """
 
 import asyncio
@@ -45,6 +46,17 @@ class TestOnvifControllerClose(unittest.TestCase):
         controller.close()
 
         controller.cams["back"]["onvif"].close.assert_awaited_once()
+        self.assertFalse(controller.loop_thread.is_alive())
+
+    def test_cancels_pending_background_tasks(self) -> None:
+        # the config poll never returns, and a task destroyed while still pending
+        # is logged during shutdown too
+        controller = _make_controller("front")
+        poll = asyncio.run_coroutine_threadsafe(asyncio.sleep(3600), controller.loop)
+
+        controller.close()
+
+        self.assertTrue(poll.cancelled())
         self.assertFalse(controller.loop_thread.is_alive())
 
     def test_camera_without_a_client_is_skipped(self) -> None:
