@@ -1,8 +1,8 @@
 """Tests for PTZ move commands that fail, such as when the camera drops off the network.
 
-A failed command used to raise out of the move with the camera still marked as busy,
-so every later move was skipped as "already performing an action", the autotracker's
-move queue ended, and autotracking stopped moving the camera until a restart.
+A failed RelativeMove, GotoPreset or AbsoluteMove used to raise out of the move with
+the camera still marked as busy. In the autotracker that ended the move queue, so
+autotracking stopped moving the camera until a restart.
 """
 
 import asyncio
@@ -71,12 +71,15 @@ class TestFailedMoveCommands(unittest.TestCase):
         self.controller = _make_controller()
         self.cam = self.controller.cams[CAMERA]
         self.metrics = self.controller.ptz_metrics[CAMERA]
+        # left by an earlier move; a failed one must not keep it for the grace period
+        self.cam["move_command_time"] = 1.0
 
     def _assert_move_ended(self) -> None:
-        # a move that never happened must not keep the camera busy or moving
+        # a move the camera did not confirm must not keep it busy or moving
         self.assertFalse(self.cam["active"])
         self.assertTrue(self.metrics.motor_stopped.is_set())
         self.assertEqual(self.metrics.stop_time.value, 100.0)
+        self.assertIsNone(self.cam["move_command_time"])
 
     def test_failed_relative_move_frees_the_camera(self) -> None:
         self.cam["ptz"].RelativeMove.side_effect = aiohttp.ClientConnectionError()
@@ -173,8 +176,8 @@ class TestFailedMoveCommands(unittest.TestCase):
                         getattr(self.controller, method)(CAMERA, *args)
                     )
 
-                # the move itself was sent
-                self.assertTrue(accepted)
+                # it ran longer than commanded, so it must not be timed as a move
+                self.assertIs(accepted, False)
                 self.assertFalse(self.cam["active"])
                 self.assertFalse(self.metrics.motor_stopped.is_set())
                 self.assertEqual(self.metrics.stop_time.value, 0)
@@ -182,45 +185,83 @@ class TestFailedMoveCommands(unittest.TestCase):
                     any(f"Stop for {CAMERA} failed" in m for m in logs.output)
                 )
 
+    ALL_MOVES = (
+        ("_move_relative", (0.5, 0.1, 0, 1)),
+        ("_move_to_preset", ("home",)),
+        ("_zoom_absolute", (0.5, 1)),
+    ) + CONTINUOUS_MOVES
+
     def test_successful_moves_still_leave_the_motor_to_the_status_poll(self) -> None:
         # only the camera's status may end a move that was really sent
-        accepted = asyncio.run(self.controller._move_relative(CAMERA, 0.5, 0.1, 0, 1))
-
-        self.assertTrue(accepted)
-        self.assertFalse(self.cam["active"])
-        self.assertFalse(self.metrics.motor_stopped.is_set())
-        self.assertEqual(self.metrics.stop_time.value, 0)
-
-    def test_accepted_moves_return_true(self) -> None:
-        moves = (
-            ("_move_to_preset", ("home",)),
-            ("_zoom_absolute", (0.5, 1)),
-        ) + self.CONTINUOUS_MOVES
-
-        for method, args in moves:
+        for method, args in self.ALL_MOVES:
             with self.subTest(method=method):
                 self.setUp()
+                self.metrics.motor_stopped.clear()
 
-                self.assertTrue(
-                    asyncio.run(getattr(self.controller, method)(CAMERA, *args))
-                )
+                accepted = asyncio.run(getattr(self.controller, method)(CAMERA, *args))
+
+                self.assertIs(accepted, True)
+                self.assertFalse(self.cam["active"])
+                self.assertFalse(self.metrics.motor_stopped.is_set())
+                self.assertEqual(self.metrics.stop_time.value, 0)
 
     def test_skipped_moves_return_false(self) -> None:
         # nothing reached the camera, so nothing may be timed as a move
-        self.cam["active"] = True
+        skipped = (
+            ("busy", "_move_relative", (0.5, 0.1, 0, 1), "WARNING"),
+            ("busy", "_zoom_absolute", (0.5, 1), "WARNING"),
+            ("busy", "_move_continuous_timed", (0.5, 0.1, 0), "WARNING"),
+            ("pt-r-fov", "_move_relative", (0.5, 0.1, 0, 1), "ERROR"),
+            ("zoom-a", "_zoom_absolute", (0.5, 1), "ERROR"),
+            ("pt", "_move_continuous_timed", (0.5, 0.1, 0), "ERROR"),
+            ("zoom", "_zoom_continuous_timed", (0.2, 0), None),
+            ("preset", "_move_to_preset", ("missing",), "ERROR"),
+        )
 
-        with self.assertLogs("frigate.ptz.onvif", level="WARNING"):
-            self.assertFalse(
-                asyncio.run(self.controller._move_relative(CAMERA, 0.5, 0.1, 0, 1))
-            )
-            self.assertFalse(
-                asyncio.run(self.controller._zoom_absolute(CAMERA, 0.5, 1))
+        for reason, method, args, level in skipped:
+            with self.subTest(reason=reason, method=method):
+                self.setUp()
+                if reason == "busy":
+                    self.cam["active"] = True
+                elif reason != "preset":
+                    self.cam["features"].remove(reason)
+
+                if level is None:
+                    accepted = asyncio.run(
+                        getattr(self.controller, method)(CAMERA, *args)
+                    )
+                else:
+                    with self.assertLogs("frigate.ptz.onvif", level=level):
+                        accepted = asyncio.run(
+                            getattr(self.controller, method)(CAMERA, *args)
+                        )
+
+                self.assertIs(accepted, False)
+                self.cam["ptz"].RelativeMove.assert_not_awaited()
+                self.cam["ptz"].AbsoluteMove.assert_not_awaited()
+                self.cam["ptz"].ContinuousMove.assert_not_awaited()
+                self.cam["ptz"].GotoPreset.assert_not_awaited()
+
+    def test_failures_while_stopping_are_not_logged(self) -> None:
+        # close() aborts a request in flight during shutdown
+        self.controller.stopping = True
+        self.cam["ptz"].RelativeMove.side_effect = aiohttp.ServerDisconnectedError()
+
+        with self.assertNoLogs("frigate.ptz.onvif", level="WARNING"):
+            accepted = asyncio.run(
+                self.controller._move_relative(CAMERA, 0.5, 0.1, 0, 1)
             )
 
-        with self.assertLogs("frigate.ptz.onvif", level="ERROR"):
-            self.assertFalse(
-                asyncio.run(self.controller._move_to_preset(CAMERA, "missing"))
-            )
+        self.assertIs(accepted, False)
+        self._assert_move_ended()
+
+    def test_failure_without_a_message_names_the_error(self) -> None:
+        self.cam["ptz"].AbsoluteMove.side_effect = TimeoutError()
+
+        with self.assertLogs("frigate.ptz.onvif", level="WARNING") as logs:
+            asyncio.run(self.controller._zoom_absolute(CAMERA, 0.5, 1))
+
+        self.assertIn("AbsoluteMove for ptz failed: TimeoutError", logs.output[0])
 
 
 if __name__ == "__main__":

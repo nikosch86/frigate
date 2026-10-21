@@ -966,6 +966,20 @@ class TestCameraMaintenanceZoomReset(unittest.TestCase):
 
         self.assertEqual(tracker.estimated_zoom_position[CAMERA], 0.5)
 
+    def test_failed_return_keeps_the_estimated_zoom(self) -> None:
+        # the camera is still at the zoom it tracked with
+        tracker = self._tracker(assumed_zoom_range=[1, 30], preset_zoom_level=10)
+        tracker.onvif._move_to_preset = AsyncMock(return_value=False)
+
+        asyncio.run(tracker.camera_maintenance(CAMERA))
+
+        tracker.onvif._move_to_preset.assert_awaited_once_with(CAMERA, "home")
+        self.assertEqual(tracker.estimated_zoom_position[CAMERA], 0.9)
+        # the track itself is over either way
+        tracker.dispatcher.publish.assert_called_once_with(
+            f"{CAMERA}/ptz_autotracker/active", "OFF", retain=False
+        )
+
 
 class TestCalibrateCameraContinuousZoom(unittest.TestCase):
     def _tracker(self, **overrides) -> PtzAutoTracker:
@@ -1074,11 +1088,49 @@ class TestCalibrateCameraContinuousZoom(unittest.TestCase):
         self.assertEqual(tracker.onvif._zoom_absolute.await_count, 1)
         self._assert_calibration_stopped(tracker, logs)
 
+    def _run_calibration_failing_at(self, fail_at: int):
+        # zooming relative calibrates the absolute zoom range, the relative zoom
+        # and the pan steps, so it sends every kind of calibration move
+        tracker = self._tracker(zooming=ZoomingModeEnum.relative)
+        del tracker.estimated_zoom_position[CAMERA]
+        tracker.onvif.cams[CAMERA]["absolute_zoom_range"] = {
+            "XRange": {"Min": 0.0, "Max": 1.0}
+        }
+        self._calibrated_before(tracker)
+        moves: list[str] = []
+
+        for name in ("_zoom_absolute", "_move_relative", "_move_to_preset"):
+
+            async def move(*args, name=name):
+                moves.append(name)
+                return len(moves) != fail_at
+
+            setattr(tracker.onvif, name, AsyncMock(side_effect=move))
+
+        with self.assertLogs("frigate.ptz.autotrack", level="INFO") as logs:
+            asyncio.run(tracker._calibrate_camera(CAMERA))
+
+        return tracker, moves, logs
+
+    def test_every_failed_move_stops_calibration_there(self) -> None:
+        tracker, all_moves, _ = self._run_calibration_failing_at(0)
+        tracker._calculate_move_coefficients.assert_called_once_with(CAMERA, True)
+        self.assertEqual(
+            set(all_moves), {"_zoom_absolute", "_move_relative", "_move_to_preset"}
+        )
+
+        for fail_at in range(1, len(all_moves) + 1):
+            with self.subTest(fail_at=fail_at, move=all_moves[fail_at - 1]):
+                tracker, moves, logs = self._run_calibration_failing_at(fail_at)
+
+                self.assertEqual(len(moves), fail_at)
+                self._assert_calibration_stopped(tracker, logs)
+
 
 class TestProcessMoveQueueContinuous(unittest.TestCase):
-    def _run_queue(self, tracker: PtzAutoTracker, *moves) -> None:
+    def _run_queue(self, tracker: PtzAutoTracker, *moves, is_set=None) -> None:
         # one loop iteration per queued move, then the stop flag ends the loop
-        tracker.stop_event.is_set.side_effect = [False] * len(moves) + [True]
+        tracker.stop_event.is_set.side_effect = is_set or [False] * len(moves) + [True]
         tracker._calculate_move_coefficients = MagicMock()
 
         async def run():
@@ -1152,31 +1204,76 @@ class TestProcessMoveQueueContinuous(unittest.TestCase):
         # such as a KeyError once ONVIF is removed from the camera's config; the
         # queue task used to end and the camera never moved again
         tracker = self._tracker(mode="relative_fov", zooming=ZoomingModeEnum.disabled)
-        tracker.onvif._move_relative.side_effect = [KeyError(CAMERA), None]
+        tracker.onvif._move_relative.side_effect = [KeyError(CAMERA), True]
+        sleep = AsyncMock()
+        checks = []
+
+        def is_set():
+            checks.append(1)
+            if len(checks) == 2:
+                # a move decided after the failure
+                tracker.move_queues[CAMERA].put_nowait((2.0, 0.5, 0.0, 0.0))
+            return len(checks) > 2
 
         with (
-            patch("frigate.ptz.autotrack.asyncio.sleep", AsyncMock()),
-            self.assertLogs("frigate.ptz.autotrack", level="ERROR"),
+            patch("frigate.ptz.autotrack.asyncio.sleep", sleep),
+            self.assertLogs("frigate.ptz.autotrack", level="ERROR") as logs,
         ):
-            self._run_queue(tracker, (1.0, 0.5, 0.0, 0.0), (2.0, 0.5, 0.0, 0.0))
+            self._run_queue(tracker, (1.0, 0.5, 0.0, 0.0), is_set=is_set)
 
         self.assertEqual(tracker.onvif._move_relative.await_count, 2)
+        # a failure that repeats at once would otherwise starve the ONVIF loop
+        sleep.assert_awaited_once_with(1)
+        self.assertIsNotNone(logs.records[0].exc_info)
 
-    def _timing_tracker(self, mode: str) -> PtzAutoTracker:
+    def test_moves_queued_during_a_failure_are_dropped(self) -> None:
+        # they were decided on frames from before the failure, and run back to back
+        # they would move the camera far past the object
+        tracker = self._tracker(mode="relative_fov", zooming=ZoomingModeEnum.disabled)
+        tracker.onvif._move_relative.side_effect = [KeyError(CAMERA), True, True]
+
+        async def queue_while_waiting(delay):
+            for frame_time in (1.2, 1.4):
+                tracker.move_queues[CAMERA].put_nowait((frame_time, 0.3, 0.0, 0.0))
+
+        checks = []
+
+        def is_set():
+            checks.append(1)
+            return len(checks) > 3
+
+        with (
+            patch(
+                "frigate.ptz.autotrack.asyncio.sleep",
+                AsyncMock(side_effect=queue_while_waiting),
+            ),
+            self.assertLogs("frigate.ptz.autotrack", level="ERROR"),
+        ):
+            self._run_queue(tracker, (1.0, 0.3, 0.0, 0.0), is_set=is_set)
+
+        tracker.onvif._move_relative.assert_awaited_once()
+
+    def _timing_tracker(
+        self, mode: str, zooming=ZoomingModeEnum.disabled, **kwargs
+    ) -> PtzAutoTracker:
         # calibrated and still collecting move timings
         tracker = self._tracker(
-            mode=mode, zooming=ZoomingModeEnum.disabled, calibrate_on_startup=True
+            mode=mode, zooming=zooming, calibrate_on_startup=True, **kwargs
         )
         tracker.intercept[CAMERA] = 0.5
         return tracker
 
+    # the pan or tilt command each movement mode and zooming mode sends
+    TIMED_PANS = (
+        ("relative_fov", ZoomingModeEnum.disabled, "_move_relative"),
+        ("relative_fov", ZoomingModeEnum.relative, "_move_relative"),
+        ("continuous_timed", ZoomingModeEnum.disabled, "_move_continuous_timed"),
+    )
+
     def test_accepted_move_is_timed(self) -> None:
-        for mode, method in (
-            ("relative_fov", "_move_relative"),
-            ("continuous_timed", "_move_continuous_timed"),
-        ):
-            with self.subTest(mode=mode):
-                tracker = self._timing_tracker(mode)
+        for mode, zooming, method in self.TIMED_PANS:
+            with self.subTest(mode=mode, zooming=zooming.value):
+                tracker = self._timing_tracker(mode, zooming)
 
                 self._run_queue(tracker, (1.0, 0.5, 0.0, 0.0))
 
@@ -1186,18 +1283,55 @@ class TestProcessMoveQueueContinuous(unittest.TestCase):
     def test_failed_move_is_not_timed(self) -> None:
         # its duration is how long the failed request took, which would end up in
         # the movement weights written to the config
-        for mode, method in (
-            ("relative_fov", "_move_relative"),
-            ("continuous_timed", "_move_continuous_timed"),
-        ):
-            with self.subTest(mode=mode):
-                tracker = self._timing_tracker(mode)
+        for mode, zooming, method in self.TIMED_PANS:
+            with self.subTest(mode=mode, zooming=zooming.value):
+                tracker = self._timing_tracker(mode, zooming)
                 setattr(tracker.onvif, method, AsyncMock(return_value=False))
 
                 self._run_queue(tracker, (1.0, 0.5, 0.0, 0.0))
 
                 getattr(tracker.onvif, method).assert_awaited_once()
                 self.assertEqual(tracker.move_metrics[CAMERA], [])
+
+    def test_failed_zoom_after_a_pan_is_not_timed(self) -> None:
+        # the pan's sample would run until the zoom failed, a timeout included
+        for mode, zooming, zoom_method in (
+            ("relative_fov", ZoomingModeEnum.absolute, "_zoom_absolute"),
+            ("relative_fov", ZoomingModeEnum.continuous, "_zoom_continuous_timed"),
+            ("continuous_timed", ZoomingModeEnum.absolute, "_zoom_absolute"),
+            ("continuous_timed", ZoomingModeEnum.continuous, "_zoom_continuous_timed"),
+        ):
+            for zoom_accepted in (True, False):
+                with self.subTest(
+                    mode=mode, zooming=zooming.value, zoom_accepted=zoom_accepted
+                ):
+                    tracker = self._timing_tracker(
+                        mode, zooming, features=("pt", "zoom", "zoom-a")
+                    )
+                    tracker.estimated_zoom_position[CAMERA] = 0.2
+                    setattr(
+                        tracker.onvif,
+                        zoom_method,
+                        AsyncMock(return_value=zoom_accepted),
+                    )
+
+                    self._run_queue(tracker, (1.0, 0.5, 0.0, 0.3))
+
+                    getattr(tracker.onvif, zoom_method).assert_awaited_once()
+                    self.assertEqual(
+                        len(tracker.move_metrics[CAMERA]), 1 if zoom_accepted else 0
+                    )
+
+    def test_pan_too_small_to_send_is_not_timed(self) -> None:
+        # nothing moved, so the times in the metrics belong to an earlier move
+        tracker = self._timing_tracker("continuous_timed")
+        _metrics(tracker).start_time.value = 0.5
+        _metrics(tracker).stop_time.value = 0.7
+
+        self._run_queue(tracker, (1.0, 0.01, 0.0, 0.0))
+
+        tracker.onvif._move_continuous_timed.assert_not_awaited()
+        self.assertEqual(tracker.move_metrics[CAMERA], [])
 
     def test_failed_continuous_zoom_keeps_estimated_position(self) -> None:
         for mode in ("continuous_timed", "relative_fov"):

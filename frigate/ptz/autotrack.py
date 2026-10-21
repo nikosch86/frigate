@@ -710,7 +710,7 @@ class PtzAutoTracker:
             self.move_metrics[camera] = move_metrics
             self.calibrating[camera] = False
             logger.warning(
-                f"Calibration for {camera} stopped because the camera did not accept a move, movement weights were not updated"
+                f"Calibration for {camera} stopped because a move failed or could not be sent, movement weights were not updated"
             )
 
     async def _run_calibration(self, camera):
@@ -1222,6 +1222,12 @@ class PtzAutoTracker:
                 # throttle a failure that repeats at once
                 await asyncio.sleep(1)
 
+                # moves queued meanwhile were decided on frames from before the
+                # failure, and running them back to back would overshoot
+                move_queue = self.move_queues[camera]
+                while not move_queue.empty():
+                    move_queue.get_nowait()
+
     async def _consume_move_queue(self, camera):
         move_queue = self.move_queues[camera]
 
@@ -1247,7 +1253,9 @@ class PtzAutoTracker:
                     continue
 
                 else:
-                    # only a pan or tilt the camera accepted is timed in move_metrics
+                    # a pan or tilt is timed in move_metrics only when the camera
+                    # accepted every command of the move, since the time of a failed
+                    # command would end up in the sample
                     moved = False
 
                     if self.movement_mode[camera] == "relative_fov":
@@ -1280,7 +1288,10 @@ class PtzAutoTracker:
                                         and self.ptz_metrics[camera].zoom_level.value
                                         != zoom
                                     ):
-                                        await self.onvif._zoom_absolute(camera, zoom, 1)
+                                        zoomed = await self.onvif._zoom_absolute(
+                                            camera, zoom, 1
+                                        )
+                                        moved = moved and zoomed
                                 elif zoom_mode == ZoomingModeEnum.continuous:
                                     if "zoom" in self.onvif.cams[camera]["features"]:
                                         zoom_vel, zoom_duration = (
@@ -1294,6 +1305,7 @@ class PtzAutoTracker:
                                                     camera, zoom_vel, zoom_duration
                                                 )
                                             )
+                                            moved = moved and zoomed
 
                                             if (
                                                 zoomed
@@ -1371,7 +1383,10 @@ class PtzAutoTracker:
                                     and self.ptz_metrics[camera].zoom_level.value
                                     != zoom
                                 ):
-                                    await self.onvif._zoom_absolute(camera, zoom, 1)
+                                    zoomed = await self.onvif._zoom_absolute(
+                                        camera, zoom, 1
+                                    )
+                                    moved = moved and zoomed
 
                                     while not self.ptz_metrics[
                                         camera
@@ -1405,6 +1420,7 @@ class PtzAutoTracker:
                                                     camera, zoom_vel, zoom_duration
                                                 )
                                             )
+                                        moved = moved and zoomed
 
                                         while not self.ptz_metrics[
                                             camera
@@ -2328,7 +2344,7 @@ class PtzAutoTracker:
             logger.debug(
                 f"{camera}: Time is {self.ptz_metrics[camera].frame_time.value}, returning to preset: {autotracker_config.return_preset}"
             )
-            await self.onvif._move_to_preset(
+            returned = await self.onvif._move_to_preset(
                 camera,
                 autotracker_config.return_preset.lower(),
             )
@@ -2337,7 +2353,8 @@ class PtzAutoTracker:
             while not self.ptz_metrics[camera].motor_stopped.is_set():
                 await self.onvif.get_camera_status(camera)
 
-            if camera in self.estimated_zoom_position:
+            # a failed return leaves the camera at the zoom it tracked with
+            if returned and camera in self.estimated_zoom_position:
                 if autotracker_config.preset_zoom_level is not None:
                     native_preset = autotracker_config.preset_zoom_level
                     self.estimated_zoom_position[camera] = (

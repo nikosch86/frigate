@@ -167,6 +167,8 @@ To begin calibration, set `calibrate_on_startup` for your camera to `True` and r
 
 After calibration has ended, your PTZ will be moved to the preset specified by `return_preset`.
 
+If a move fails or cannot be sent during calibration, for example because the camera stops responding, Frigate stops the calibration and logs a warning. Your config file is not changed, the PTZ stays where the failed move left it, and calibration runs again on the next restart while `calibrate_on_startup` is `True`.
+
 :::note
 
 Frigate's web UI and all other cameras will be unresponsive while calibration is in progress. This is expected and normal to avoid excessive network traffic or CPU usage during calibration. Calibration for most PTZs will take about two minutes. The Frigate log will show calibration progress and any errors.
