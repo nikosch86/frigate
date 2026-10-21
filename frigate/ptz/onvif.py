@@ -725,10 +725,11 @@ class OnvifController:
         metrics.motor_stopped.set()
         metrics.stop_time.value = metrics.frame_time.value
 
-    async def _move_relative(self, camera_name: str, pan, tilt, zoom, speed) -> None:
+    async def _move_relative(self, camera_name: str, pan, tilt, zoom, speed) -> bool:
+        """Send a RelativeMove and return whether the camera accepted it."""
         if "pt-r-fov" not in self.cams[camera_name]["features"]:
             logger.error(f"{camera_name} does not support ONVIF RelativeMove (FOV).")
-            return
+            return False
 
         logger.debug(
             f"{camera_name} called RelativeMove: pan: {pan} tilt: {tilt} zoom: {zoom}"
@@ -738,7 +739,7 @@ class OnvifController:
             logger.warning(
                 f"{camera_name} is already performing an action, not moving..."
             )
-            return
+            return False
 
         self.cams[camera_name]["active"] = True
 
@@ -801,6 +802,7 @@ class OnvifController:
         except (Fault, ONVIFError, TransportError, Exception) as e:
             logger.warning(f"RelativeMove for {camera_name} failed: {e}")
             self._end_failed_move(camera_name)
+            return False
         finally:
             # reset after the move request, also when it failed, since the request
             # is reused for the next move
@@ -811,6 +813,7 @@ class OnvifController:
                 del move_request["Translation"]["Zoom"]
 
         self.cams[camera_name]["active"] = False
+        return True
 
     async def _move_continuous_timed(
         self,
@@ -818,15 +821,16 @@ class OnvifController:
         pan_velocity: float,
         tilt_velocity: float,
         duration: float,
-    ) -> None:
+    ) -> bool:
         """Move PTZ using ContinuousMove with timed stop for autotracking.
 
         For cameras without FOV RelativeMove: moves at the given velocity for
-        a calculated duration to reach the desired position change.
+        a calculated duration to reach the desired position change. Returns
+        whether the camera accepted the move.
         """
         if "pt" not in self.cams[camera_name]["features"]:
             logger.error(f"{camera_name} does not support ONVIF ContinuousMove.")
-            return
+            return False
 
         logger.debug(
             f"{camera_name} ContinuousMove: pan_vel={pan_velocity:.3f}, "
@@ -835,7 +839,7 @@ class OnvifController:
 
         if self.cams[camera_name]["active"]:
             logger.warning(f"{camera_name} is already moving, not executing move...")
-            return
+            return False
 
         self.cams[camera_name]["active"] = True
         self.ptz_metrics[camera_name].motor_stopped.clear()
@@ -861,7 +865,7 @@ class OnvifController:
         except (Fault, ONVIFError, TransportError, Exception) as e:
             logger.warning(f"ContinuousMove for {camera_name} failed: {e}")
             self._end_failed_move(camera_name)
-            return
+            return False
 
         try:
             await asyncio.sleep(duration)
@@ -885,6 +889,8 @@ class OnvifController:
             logger.warning(f"Stop for {camera_name} failed: {e}")
             self.cams[camera_name]["active"] = False
 
+        return True
+
     async def _move_continuous_timed_with_zoom(
         self,
         camera_name: str,
@@ -892,11 +898,12 @@ class OnvifController:
         tilt_velocity: float,
         duration: float,
         zoom_velocity: float,
-    ) -> None:
+    ) -> bool:
         """Move PTZ with zoom using ContinuousMove for cameras with zoom support.
 
         For Sunba cameras, pan/tilt and zoom are sent as separate commands
         due to a firmware bug where combining them causes only zoom to work.
+        Returns whether the camera accepted every command sent.
         """
         sunba_quirks = self.cams[camera_name].get("sunba_quirks", False)
 
@@ -905,13 +912,20 @@ class OnvifController:
                 f"{camera_name}: Sunba quirks - separating pan/tilt and zoom commands"
             )
 
+            accepted = True
+
             if pan_velocity != 0 or tilt_velocity != 0:
-                await self._move_continuous_timed(
+                accepted = await self._move_continuous_timed(
                     camera_name, pan_velocity, tilt_velocity, duration
                 )
 
             if zoom_velocity != 0:
-                await self._zoom_continuous_timed(camera_name, zoom_velocity, duration)
+                zoomed = await self._zoom_continuous_timed(
+                    camera_name, zoom_velocity, duration
+                )
+                accepted = accepted and zoomed
+
+            return accepted
 
         else:
             corrected_pan, corrected_tilt = self._apply_sunba_speed_swap(
@@ -934,7 +948,7 @@ class OnvifController:
                     f"ContinuousMove with zoom for {camera_name} failed: {e}"
                 )
                 self._end_failed_move(camera_name)
-                return
+                return False
 
             try:
                 await asyncio.sleep(duration)
@@ -945,12 +959,17 @@ class OnvifController:
                 logger.warning(f"Stop for {camera_name} failed: {e}")
                 self.cams[camera_name]["active"] = False
 
+            return True
+
     async def _zoom_continuous_timed(
         self, camera_name: str, zoom_velocity: float, duration: float
-    ) -> None:
-        """Execute zoom-only ContinuousMove (used by Sunba workaround)."""
+    ) -> bool:
+        """Execute zoom-only ContinuousMove (used by Sunba workaround).
+
+        Returns whether the camera accepted the zoom.
+        """
         if "zoom" not in self.cams[camera_name]["features"]:
-            return
+            return False
 
         move_request = self.cams[camera_name]["move_request"]
         move_request.Velocity = {"Zoom": {"x": zoom_velocity}}
@@ -963,7 +982,7 @@ class OnvifController:
         except (Fault, ONVIFError, TransportError, Exception) as e:
             logger.warning(f"Zoom ContinuousMove for {camera_name} failed: {e}")
             self._end_failed_move(camera_name)
-            return
+            return False
 
         try:
             await asyncio.sleep(duration)
@@ -982,12 +1001,15 @@ class OnvifController:
             logger.warning(f"Stop for {camera_name} failed: {e}")
             self.cams[camera_name]["active"] = False
 
-    async def _move_to_preset(self, camera_name: str, preset: str) -> None:
+        return True
+
+    async def _move_to_preset(self, camera_name: str, preset: str) -> bool:
+        """Send a GotoPreset and return whether the camera accepted it."""
         preset = preset.lower()
 
         if preset not in self.cams[camera_name]["presets"]:
             logger.error(f"{preset} is not a valid preset for {camera_name}")
-            return
+            return False
 
         self.cams[camera_name]["active"] = True
         self.ptz_metrics[camera_name].start_time.value = 0
@@ -1005,9 +1027,10 @@ class OnvifController:
         except (Fault, ONVIFError, TransportError, Exception) as e:
             logger.warning(f"GotoPreset for {camera_name} failed: {e}")
             self._end_failed_move(camera_name)
-            return
+            return False
 
         self.cams[camera_name]["active"] = False
+        return True
 
     async def _set_preset(self, camera_name: str, preset: str) -> None:
         """Update an existing preset to the current camera position.
@@ -1057,10 +1080,11 @@ class OnvifController:
 
         await self.cams[camera_name]["ptz"].ContinuousMove(move_request)
 
-    async def _zoom_absolute(self, camera_name: str, zoom, speed) -> None:
+    async def _zoom_absolute(self, camera_name: str, zoom, speed) -> bool:
+        """Send an AbsoluteMove zoom and return whether the camera accepted it."""
         if "zoom-a" not in self.cams[camera_name]["features"]:
             logger.error(f"{camera_name} does not support ONVIF AbsoluteMove zooming.")
-            return
+            return False
 
         logger.debug(f"{camera_name} called AbsoluteMove: zoom: {zoom}")
 
@@ -1068,7 +1092,7 @@ class OnvifController:
             logger.warning(
                 f"{camera_name} is already performing an action, not moving..."
             )
-            return
+            return False
 
         self.cams[camera_name]["active"] = True
         self.ptz_metrics[camera_name].motor_stopped.clear()
@@ -1101,9 +1125,10 @@ class OnvifController:
         except (Fault, ONVIFError, TransportError, Exception) as e:
             logger.warning(f"AbsoluteMove for {camera_name} failed: {e}")
             self._end_failed_move(camera_name)
-            return
+            return False
 
         self.cams[camera_name]["active"] = False
+        return True
 
     async def _focus(self, camera_name: str, command: OnvifCommandEnum) -> None:
         if self.cams[camera_name]["active"]:

@@ -72,6 +72,10 @@ def transform_is_finite(coord_transformations) -> bool:
     return True
 
 
+class CalibrationMoveFailed(Exception):
+    """A move during calibration failed, so its timing cannot be measured."""
+
+
 @dataclass
 class OnvifSetupRetry:
     """A pending re-enable of autotracking that setup disabled when ONVIF failed."""
@@ -690,6 +694,26 @@ class PtzAutoTracker:
         )
 
     async def _calibrate_camera(self, camera):
+        # a failed move has no meaningful timing, so stop at the first one and keep
+        # what calibration would have replaced
+        min_zoom = self.ptz_metrics[camera].min_zoom.value
+        max_zoom = self.ptz_metrics[camera].max_zoom.value
+        zoom_time = self.zoom_time.get(camera, 0)
+        move_metrics = list(self.move_metrics[camera])
+
+        try:
+            await self._run_calibration(camera)
+        except CalibrationMoveFailed:
+            self.ptz_metrics[camera].min_zoom.value = min_zoom
+            self.ptz_metrics[camera].max_zoom.value = max_zoom
+            self.zoom_time[camera] = zoom_time
+            self.move_metrics[camera] = move_metrics
+            self.calibrating[camera] = False
+            logger.warning(
+                f"Calibration for {camera} stopped because the camera did not accept a move, movement weights were not updated"
+            )
+
+    async def _run_calibration(self, camera):
         # move the camera from the preset in steps and measure the time it takes to move that amount
         # this will allow us to predict movement times with a simple linear regression
         # start with 0 so we can determine a baseline (to be used as the intercept in the regression calc)
@@ -751,22 +775,24 @@ class PtzAutoTracker:
 
                 for i in range(2):
                     # absolute move to 0 - fully zoomed out
-                    await self.onvif._zoom_absolute(
+                    if not await self.onvif._zoom_absolute(
                         camera,
                         self.onvif.cams[camera]["absolute_zoom_range"]["XRange"]["Min"],
                         1,
-                    )
+                    ):
+                        raise CalibrationMoveFailed
 
                 while not self.ptz_metrics[camera].motor_stopped.is_set():
                     await self.onvif.get_camera_status(camera)
 
                 zoom_out_values.append(self.ptz_metrics[camera].zoom_level.value)
 
-                await self.onvif._zoom_absolute(
+                if not await self.onvif._zoom_absolute(
                     camera,
                     self.onvif.cams[camera]["absolute_zoom_range"]["XRange"]["Max"],
                     1,
-                )
+                ):
+                    raise CalibrationMoveFailed
 
                 while not self.ptz_metrics[camera].motor_stopped.is_set():
                     await self.onvif.get_camera_status(camera)
@@ -778,13 +804,14 @@ class PtzAutoTracker:
                     == ZoomingModeEnum.relative
                 ):
                     # relative move to -0.01
-                    await self.onvif._move_relative(
+                    if not await self.onvif._move_relative(
                         camera,
                         0,
                         0,
                         -1e-2,
                         1,
-                    )
+                    ):
+                        raise CalibrationMoveFailed
 
                     while not self.ptz_metrics[camera].motor_stopped.is_set():
                         await self.onvif.get_camera_status(camera)
@@ -793,13 +820,14 @@ class PtzAutoTracker:
 
                     zoom_start_time = time.time()
                     # relative move to 0.01
-                    await self.onvif._move_relative(
+                    if not await self.onvif._move_relative(
                         camera,
                         0,
                         0,
                         1e-2,
                         1,
-                    )
+                    ):
+                        raise CalibrationMoveFailed
 
                     while not self.ptz_metrics[camera].motor_stopped.is_set():
                         await self.onvif.get_camera_status(camera)
@@ -808,26 +836,28 @@ class PtzAutoTracker:
 
                     full_relative_start_time = time.time()
 
-                    await self.onvif._move_relative(
+                    if not await self.onvif._move_relative(
                         camera,
                         -1,
                         -1,
                         -1e-2,
                         1,
-                    )
+                    ):
+                        raise CalibrationMoveFailed
 
                     while not self.ptz_metrics[camera].motor_stopped.is_set():
                         await self.onvif.get_camera_status(camera)
 
                     full_relative_stop_time = time.time()
 
-                    await self.onvif._move_relative(
+                    if not await self.onvif._move_relative(
                         camera,
                         1,
                         1,
                         1e-2,
                         1,
-                    )
+                    ):
+                        raise CalibrationMoveFailed
 
                     while not self.ptz_metrics[camera].motor_stopped.is_set():
                         await self.onvif.get_camera_status(camera)
@@ -849,10 +879,11 @@ class PtzAutoTracker:
             self.ptz_metrics[camera].max_zoom.value = 1
             self.ptz_metrics[camera].min_zoom.value = 0
 
-        await self.onvif._move_to_preset(
+        if not await self.onvif._move_to_preset(
             camera,
             self.config.cameras[camera].onvif.autotracking.return_preset.lower(),
-        )
+        ):
+            raise CalibrationMoveFailed
         self.ptz_metrics[camera].reset.set()
         self.ptz_metrics[camera].motor_stopped.clear()
 
@@ -865,7 +896,8 @@ class PtzAutoTracker:
             tilt = step_sizes[step]
 
             start_time = time.time()
-            await self.onvif._move_relative(camera, pan, tilt, 0, 1)
+            if not await self.onvif._move_relative(camera, pan, tilt, 0, 1):
+                raise CalibrationMoveFailed
 
             # Wait until the camera finishes moving
             while not self.ptz_metrics[camera].motor_stopped.is_set():
@@ -881,10 +913,11 @@ class PtzAutoTracker:
                 }
             )
 
-            await self.onvif._move_to_preset(
+            if not await self.onvif._move_to_preset(
                 camera,
                 self.config.cameras[camera].onvif.autotracking.return_preset.lower(),
-            )
+            ):
+                raise CalibrationMoveFailed
             self.ptz_metrics[camera].reset.set()
             self.ptz_metrics[camera].motor_stopped.clear()
 
@@ -1214,15 +1247,22 @@ class PtzAutoTracker:
                     continue
 
                 else:
+                    # only a pan or tilt the camera accepted is timed in move_metrics
+                    moved = False
+
                     if self.movement_mode[camera] == "relative_fov":
                         if (
                             self.config.cameras[camera].onvif.autotracking.zooming
                             == ZoomingModeEnum.relative
                         ):
-                            await self.onvif._move_relative(camera, pan, tilt, zoom, 1)
+                            moved = await self.onvif._move_relative(
+                                camera, pan, tilt, zoom, 1
+                            )
                         else:
                             if pan != 0 or tilt != 0:
-                                await self.onvif._move_relative(camera, pan, tilt, 0, 1)
+                                moved = await self.onvif._move_relative(
+                                    camera, pan, tilt, 0, 1
+                                )
 
                                 # Wait until the camera finishes moving
                                 while not self.ptz_metrics[
@@ -1249,11 +1289,17 @@ class PtzAutoTracker:
                                             )
                                         )
                                         if zoom_duration > 0:
-                                            await self.onvif._zoom_continuous_timed(
-                                                camera, zoom_vel, zoom_duration
+                                            zoomed = (
+                                                await self.onvif._zoom_continuous_timed(
+                                                    camera, zoom_vel, zoom_duration
+                                                )
                                             )
 
-                                            if camera in self.estimated_zoom_position:
+                                            if (
+                                                zoomed
+                                                and camera
+                                                in self.estimated_zoom_position
+                                            ):
                                                 position_delta = (
                                                     zoom_vel
                                                     * zoom_duration
@@ -1303,7 +1349,7 @@ class PtzAutoTracker:
                             )
 
                             if duration > 0:
-                                await self.onvif._move_continuous_timed(
+                                moved = await self.onvif._move_continuous_timed(
                                     camera, pan_vel, tilt_vel, duration
                                 )
 
@@ -1348,12 +1394,16 @@ class PtzAutoTracker:
                                             and "zoom-r"
                                             not in self.onvif.cams[camera]["features"]
                                         ):
-                                            await self.onvif._zoom_continuous_timed(
-                                                camera, zoom_vel, zoom_duration
+                                            zoomed = (
+                                                await self.onvif._zoom_continuous_timed(
+                                                    camera, zoom_vel, zoom_duration
+                                                )
                                             )
                                         else:
-                                            await self.onvif._zoom_continuous_timed(
-                                                camera, zoom_vel, zoom_duration
+                                            zoomed = (
+                                                await self.onvif._zoom_continuous_timed(
+                                                    camera, zoom_vel, zoom_duration
+                                                )
                                             )
 
                                         while not self.ptz_metrics[
@@ -1361,7 +1411,10 @@ class PtzAutoTracker:
                                         ].motor_stopped.is_set():
                                             await self.onvif.get_camera_status(camera)
 
-                                        if camera in self.estimated_zoom_position:
+                                        if (
+                                            zoomed
+                                            and camera in self.estimated_zoom_position
+                                        ):
                                             position_delta = (
                                                 zoom_vel
                                                 * zoom_duration
@@ -1414,7 +1467,8 @@ class PtzAutoTracker:
 
                     # save metrics for better estimate calculations
                     if (
-                        self.intercept[camera] is not None
+                        moved
+                        and self.intercept[camera] is not None
                         and len(self.move_metrics[camera])
                         < AUTOTRACKING_MAX_MOVE_METRICS
                         and (pan != 0 or tilt != 0)

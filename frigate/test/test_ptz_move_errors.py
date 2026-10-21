@@ -82,8 +82,11 @@ class TestFailedMoveCommands(unittest.TestCase):
         self.cam["ptz"].RelativeMove.side_effect = aiohttp.ClientConnectionError()
 
         with self.assertLogs("frigate.ptz.onvif", level="WARNING") as logs:
-            asyncio.run(self.controller._move_relative(CAMERA, 0.5, 0.1, 0, 1))
+            accepted = asyncio.run(
+                self.controller._move_relative(CAMERA, 0.5, 0.1, 0, 1)
+            )
 
+        self.assertFalse(accepted)
         self._assert_move_ended()
         self.assertTrue(any("RelativeMove for ptz failed" in m for m in logs.output))
 
@@ -120,8 +123,9 @@ class TestFailedMoveCommands(unittest.TestCase):
         self.cam["ptz"].GotoPreset.side_effect = Fault("not reachable")
 
         with self.assertLogs("frigate.ptz.onvif", level="WARNING") as logs:
-            asyncio.run(self.controller._move_to_preset(CAMERA, "home"))
+            accepted = asyncio.run(self.controller._move_to_preset(CAMERA, "home"))
 
+        self.assertFalse(accepted)
         self._assert_move_ended()
         self.assertTrue(any("GotoPreset for ptz failed" in m for m in logs.output))
 
@@ -129,8 +133,9 @@ class TestFailedMoveCommands(unittest.TestCase):
         self.cam["ptz"].AbsoluteMove.side_effect = TimeoutError()
 
         with self.assertLogs("frigate.ptz.onvif", level="WARNING") as logs:
-            asyncio.run(self.controller._zoom_absolute(CAMERA, 0.5, 1))
+            accepted = asyncio.run(self.controller._zoom_absolute(CAMERA, 0.5, 1))
 
+        self.assertFalse(accepted)
         self._assert_move_ended()
         self.assertTrue(any("AbsoluteMove for ptz failed" in m for m in logs.output))
 
@@ -148,8 +153,11 @@ class TestFailedMoveCommands(unittest.TestCase):
                 self.cam["ptz"].ContinuousMove.side_effect = TimeoutError()
 
                 with self.assertLogs("frigate.ptz.onvif", level="WARNING"):
-                    asyncio.run(getattr(self.controller, method)(CAMERA, *args))
+                    accepted = asyncio.run(
+                        getattr(self.controller, method)(CAMERA, *args)
+                    )
 
+                self.assertFalse(accepted)
                 self._assert_move_ended()
                 self.cam["ptz"].Stop.assert_not_awaited()
 
@@ -161,8 +169,12 @@ class TestFailedMoveCommands(unittest.TestCase):
                 self.cam["ptz"].Stop.side_effect = aiohttp.ClientConnectionError()
 
                 with self.assertLogs("frigate.ptz.onvif", level="WARNING") as logs:
-                    asyncio.run(getattr(self.controller, method)(CAMERA, *args))
+                    accepted = asyncio.run(
+                        getattr(self.controller, method)(CAMERA, *args)
+                    )
 
+                # the move itself was sent
+                self.assertTrue(accepted)
                 self.assertFalse(self.cam["active"])
                 self.assertFalse(self.metrics.motor_stopped.is_set())
                 self.assertEqual(self.metrics.stop_time.value, 0)
@@ -172,11 +184,43 @@ class TestFailedMoveCommands(unittest.TestCase):
 
     def test_successful_moves_still_leave_the_motor_to_the_status_poll(self) -> None:
         # only the camera's status may end a move that was really sent
-        asyncio.run(self.controller._move_relative(CAMERA, 0.5, 0.1, 0, 1))
+        accepted = asyncio.run(self.controller._move_relative(CAMERA, 0.5, 0.1, 0, 1))
 
+        self.assertTrue(accepted)
         self.assertFalse(self.cam["active"])
         self.assertFalse(self.metrics.motor_stopped.is_set())
         self.assertEqual(self.metrics.stop_time.value, 0)
+
+    def test_accepted_moves_return_true(self) -> None:
+        moves = (
+            ("_move_to_preset", ("home",)),
+            ("_zoom_absolute", (0.5, 1)),
+        ) + self.CONTINUOUS_MOVES
+
+        for method, args in moves:
+            with self.subTest(method=method):
+                self.setUp()
+
+                self.assertTrue(
+                    asyncio.run(getattr(self.controller, method)(CAMERA, *args))
+                )
+
+    def test_skipped_moves_return_false(self) -> None:
+        # nothing reached the camera, so nothing may be timed as a move
+        self.cam["active"] = True
+
+        with self.assertLogs("frigate.ptz.onvif", level="WARNING"):
+            self.assertFalse(
+                asyncio.run(self.controller._move_relative(CAMERA, 0.5, 0.1, 0, 1))
+            )
+            self.assertFalse(
+                asyncio.run(self.controller._zoom_absolute(CAMERA, 0.5, 1))
+            )
+
+        with self.assertLogs("frigate.ptz.onvif", level="ERROR"):
+            self.assertFalse(
+                asyncio.run(self.controller._move_to_preset(CAMERA, "missing"))
+            )
 
 
 if __name__ == "__main__":
