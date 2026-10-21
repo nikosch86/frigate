@@ -15,6 +15,7 @@ KeyError on the autotracker thread or silently keep the wrong state:
 """
 
 import asyncio
+import concurrent.futures
 import threading
 import time
 import unittest
@@ -203,6 +204,16 @@ class TestAutotrackerOnvifRetry(unittest.TestCase):
         self.assertEqual(self.retry.delay, 60)
         self.assertAlmostEqual(self.retry.next_attempt - time.monotonic(), 60, delta=1)
 
+    def test_cancelled_probe_counts_as_unreachable(self) -> None:
+        self.retry.attempt = concurrent.futures.Future()
+        self.retry.attempt.cancel()
+
+        self.tracker.retry_onvif_setup()
+
+        self.assertFalse(self._autotracking())
+        self.assertIsNone(self.retry.attempt)
+        self.assertEqual(self.retry.delay, 60)
+
     def test_probe_error_counts_as_unreachable(self) -> None:
         self._probe_returns(side_effect=OSError("no route to host"))
 
@@ -345,6 +356,24 @@ class TestAutotrackerThreadTick(unittest.TestCase):
 
         calls = [name for name, _, _ in thread.ptz_autotracker.method_calls]
         self.assertEqual(calls[:2], ["check_for_updates", "retry_onvif_setup"])
+
+    def test_exit_cancels_a_pending_probe(self) -> None:
+        # a probe still connecting to an unreachable camera would be left pending
+        # on the ONVIF loop when it stops
+        thread = PtzAutoTrackerThread.__new__(PtzAutoTrackerThread)
+        thread.config = MagicMock()
+        thread.config.cameras = {}
+        thread.stop_event = MagicMock()
+        thread.stop_event.wait.return_value = True
+        thread.ptz_autotracker = MagicMock()
+        probe = concurrent.futures.Future()
+        thread.ptz_autotracker.onvif_setup_retries = {
+            CAMERA: OnvifSetupRetry(delay=30, next_attempt=0, attempt=probe)
+        }
+
+        thread.run()
+
+        self.assertTrue(probe.cancelled())
 
 
 if __name__ == "__main__":

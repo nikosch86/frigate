@@ -45,6 +45,10 @@ class OnvifCommandEnum(str, Enum):
 
 class OnvifController:
     ptz_metrics: dict[str, PTZMetrics]
+    config_poll: asyncio.Task | None = None
+    shutdown_timeout = 5
+    # set by close(): no camera status arrives after this
+    stopping = False
 
     def __init__(
         self, config: FrigateConfig, ptz_metrics: dict[str, PTZMetrics]
@@ -78,7 +82,6 @@ class OnvifController:
         )
 
         asyncio.run_coroutine_threadsafe(self._init_cameras(), self.loop)
-        self.config_poll: asyncio.Task | None = None
         self.loop.call_soon_threadsafe(self._start_config_poll)
 
     def _start_config_poll(self) -> None:
@@ -201,7 +204,9 @@ class OnvifController:
         try:
             await onvif.update_xaddrs()
         except Exception as e:
-            logger.error(f"Onvif connection failed for {camera_name}: {e}")
+            # close() aborts a connection in flight, which says nothing about the camera
+            if not self.stopping:
+                logger.error(f"Onvif connection failed for {camera_name}: {e}")
             return False
 
         # create init services
@@ -1191,7 +1196,7 @@ class OnvifController:
                         "features": self.cams[camera_name]["features"],
                         "presets": list(self.cams[camera_name]["presets"].keys()),
                     }
-                else:
+                elif not self.stopping:
                     logger.warning(f"ONVIF initialization failed for {camera_name}")
             except Exception as e:
                 logger.error(
@@ -1274,6 +1279,12 @@ class OnvifController:
         return time.monotonic() - command_time < grace_period
 
     async def get_camera_status(self, camera_name: str) -> None:
+        # release callers waiting for the motor to stop. Against closed sessions their
+        # polling loops would spin without yielding and starve the loop
+        if self.stopping:
+            self.ptz_metrics[camera_name].motor_stopped.set()
+            return
+
         async with self.status_locks[camera_name]:
             if camera_name not in self.cams.keys():
                 logger.error(f"ONVIF is not configured for {camera_name}")
@@ -1304,9 +1315,11 @@ class OnvifController:
                     ]:
                         raise Exception
             except Exception:
-                logger.warning(
-                    f"Camera {camera_name} does not support the ONVIF GetStatus method. Autotracking will not function correctly and must be disabled in your config."
-                )
+                # close() aborts a request in flight, which says nothing about support
+                if not self.stopping:
+                    logger.warning(
+                        f"Camera {camera_name} does not support the ONVIF GetStatus method. Autotracking will not function correctly and must be disabled in your config."
+                    )
                 return
 
             logger.debug(
@@ -1409,16 +1422,18 @@ class OnvifController:
 
         logger.info("Exiting ONVIF controller...")
         self.config_subscriber.stop()
+        self.stopping = True
 
         # stop the poll and close the sessions while the loop still runs, or asyncio
         # and aiohttp report them when they are garbage collected during shutdown,
-        # after the log queue has gone
-        try:
-            asyncio.run_coroutine_threadsafe(self._shutdown(), self.loop).result(
-                timeout=5
-            )
-        except TimeoutError:
-            logger.debug("Timed out shutting down the ONVIF loop")
+        # after the log queue has gone. A loop that already stopped cannot run it
+        if self.loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(self._shutdown(), self.loop).result(
+                    timeout=self.shutdown_timeout
+                )
+            except TimeoutError:
+                logger.debug("Timed out shutting down the ONVIF loop")
 
         def stop_and_cleanup():
             try:

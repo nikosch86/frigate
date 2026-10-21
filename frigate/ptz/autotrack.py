@@ -231,6 +231,12 @@ class PtzAutoTrackerThread(threading.Thread):
                         self.ptz_autotracker.tracked_object[camera] = None
                         self.ptz_autotracker.tracked_object_history[camera].clear()
 
+        # a probe still connecting to an unreachable camera would otherwise be left
+        # pending when the ONVIF loop stops, and be logged during shutdown
+        for retry in self.ptz_autotracker.onvif_setup_retries.values():
+            if retry.attempt is not None:
+                retry.attempt.cancel()
+
         self.ptz_autotracker.config_subscriber.stop()
         logger.info("Exiting autotracker...")
 
@@ -365,7 +371,11 @@ class PtzAutoTracker:
             if not retry.attempt.done():
                 continue
 
-            if retry.attempt.exception() is None and retry.attempt.result():
+            if (
+                not retry.attempt.cancelled()
+                and retry.attempt.exception() is None
+                and retry.attempt.result()
+            ):
                 # setup also removes the retry, from the ONVIF loop thread
                 self.onvif_setup_retries.pop(camera, None)
                 logger.info("Re-enabling autotracking for %s: onvif is back", camera)
