@@ -176,6 +176,20 @@ class TestAutotrackerSetupMovementMode(unittest.TestCase):
             f"{CAMERA}/ptz_autotracker/active", "OFF", retain=False
         )
 
+    def test_relative_fov_camera_gets_the_continuous_zoom_speed(self) -> None:
+        # continuous zooming needs it in either movement mode
+        tracker = _make_tracker(
+            features=("pt", "pt-r-fov", "zoom"),
+            zooming=ZoomingModeEnum.continuous,
+            continuous_zoom_speed=0.8,
+        )
+
+        _run_setup(tracker)
+
+        self.assertEqual(tracker.movement_mode[CAMERA], "relative_fov")
+        self.assertEqual(tracker.continuous_zoom_speed[CAMERA], 0.8)
+        self.assertGreater(tracker._calculate_continuous_zoom_params(CAMERA, 0.3)[1], 0)
+
     def test_falls_back_to_continuous_timed(self) -> None:
         tracker = _make_tracker(
             features=("pt",),

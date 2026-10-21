@@ -464,6 +464,11 @@ class PtzAutoTracker:
         # the camera answers, so a retry left by an earlier failed setup is stale
         self.onvif_setup_retries.pop(camera, None)
 
+        # continuous zooming times its zoom moves in either movement mode
+        self.continuous_zoom_speed[camera] = (
+            camera_config.onvif.autotracking.continuous_zoom_speed
+        )
+
         # Determine which movement mode this camera supports, even when ONVIF was
         # initialized elsewhere, such as by a UI PTZ info request after a failed setup
         if "pt-r-fov" in self.onvif.cams[camera]["features"]:
@@ -474,9 +479,6 @@ class PtzAutoTracker:
             self.movement_mode[camera] = "continuous_timed"
             self.continuous_speed[camera] = (
                 camera_config.onvif.autotracking.continuous_speed
-            )
-            self.continuous_zoom_speed[camera] = (
-                camera_config.onvif.autotracking.continuous_zoom_speed
             )
             logger.info(
                 f"{camera}: Using ContinuousMove (timed) for autotracking - "
