@@ -114,9 +114,8 @@ class OnvifController:
             except Exception:
                 logger.error("Error checking for ONVIF config updates")
 
-    async def _close_camera(self, cam_name: str) -> None:
-        """Close the ONVIF client session for a camera."""
-        cam_state = self.cams.get(cam_name)
+    async def _close_camera(self, cam_name: str, cam_state: dict | None) -> None:
+        """Close the ONVIF client session held in a camera's state."""
         if cam_state and "onvif" in cam_state:
             try:
                 await cam_state["onvif"].close()
@@ -130,31 +129,33 @@ class OnvifController:
             self.config_poll.cancel()
             await asyncio.wait([self.config_poll])
 
-        await asyncio.gather(*(self._close_camera(cam_name) for cam_name in self.cams))
+        await asyncio.gather(
+            *(self._close_camera(name, state) for name, state in self.cams.items())
+        )
 
     async def _reinit_camera(self, cam_name: str) -> None:
         """Re-initialize a camera after config change."""
         logger.info(f"Re-initializing ONVIF for {cam_name} due to config change")
 
-        # close existing session before re-init
-        await self._close_camera(cam_name)
+        # replace the state before closing the old session. The autotracker can be
+        # polling this camera, and against a closed session its loops spin without
+        # yielding, which froze the whole loop
+        old_state = self.cams.pop(cam_name, None)
+        self.failed_cams.pop(cam_name, None)
 
         cam = self.config.cameras.get(cam_name)
         if not cam or not cam.onvif.host:
             # ONVIF removed from config, clean up
-            self.cams.pop(cam_name, None)
             self.camera_configs.pop(cam_name, None)
-            self.failed_cams.pop(cam_name, None)
-            return
+        else:
+            # update stored config and reset state
+            self.camera_configs[cam_name] = cam
+            if cam_name not in self.status_locks:
+                self.status_locks[cam_name] = asyncio.Lock()
 
-        # update stored config and reset state
-        self.camera_configs[cam_name] = cam
-        if cam_name not in self.status_locks:
-            self.status_locks[cam_name] = asyncio.Lock()
-        self.cams.pop(cam_name, None)
-        self.failed_cams.pop(cam_name, None)
+            await self._init_single_camera(cam_name)
 
-        await self._init_single_camera(cam_name)
+        await self._close_camera(cam_name, old_state)
 
     async def _init_single_camera(self, cam_name: str) -> bool:
         """Initialize a single camera by name.
@@ -1288,6 +1289,8 @@ class OnvifController:
         async with self.status_locks[camera_name]:
             if camera_name not in self.cams.keys():
                 logger.error(f"ONVIF is not configured for {camera_name}")
+                # no status arrives for it, so nobody may keep waiting on its motor
+                self.ptz_metrics[camera_name].motor_stopped.set()
                 return
 
             if not self.cams[camera_name]["init"]:
