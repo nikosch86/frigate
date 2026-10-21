@@ -136,30 +136,38 @@ class OnvifController:
         """Re-initialize a camera after config change."""
         logger.info(f"Re-initializing ONVIF for {cam_name} due to config change")
 
-        # status polls wait while the old session closes. Against a closed session
-        # the autotracker's loops spin without yielding, which froze the whole loop
-        if cam_name in self.cams:
-            self.cams[cam_name]["closing"] = True
+        # hold the status lock, so no status poll is in flight on the old session while
+        # it closes and polls wait for the new client. A poll against a closed session
+        # spins without yielding, which froze the whole loop
+        async with self.status_locks.setdefault(cam_name, asyncio.Lock()):
+            # close existing session before re-init
+            await self._close_camera(cam_name)
 
-        # close existing session before re-init
-        await self._close_camera(cam_name)
+            cam = self.config.cameras.get(cam_name)
+            if not cam or not cam.onvif.host:
+                # ONVIF removed from config, clean up
+                self.cams.pop(cam_name, None)
+                self.camera_configs.pop(cam_name, None)
+                self.failed_cams.pop(cam_name, None)
+                return
 
-        cam = self.config.cameras.get(cam_name)
-        if not cam or not cam.onvif.host:
-            # ONVIF removed from config, clean up
+            # update stored config and reset state
+            self.camera_configs[cam_name] = cam
             self.cams.pop(cam_name, None)
-            self.camera_configs.pop(cam_name, None)
             self.failed_cams.pop(cam_name, None)
-            return
 
-        # update stored config and reset state
-        self.camera_configs[cam_name] = cam
-        if cam_name not in self.status_locks:
-            self.status_locks[cam_name] = asyncio.Lock()
-        self.cams.pop(cam_name, None)
-        self.failed_cams.pop(cam_name, None)
+            # connect now, or the autotracker's moves fail until a status poll or a UI
+            # request happens to initialize the new client
+            if await self._init_single_camera(cam_name):
+                await self._try_init_onvif(cam_name)
 
-        await self._init_single_camera(cam_name)
+    async def _try_init_onvif(self, camera_name: str) -> bool:
+        """Initialize ONVIF for a camera, reporting failure instead of raising."""
+        try:
+            return await self._init_onvif(camera_name)
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.error(f"Unable to initialize ONVIF for {camera_name}: {e}")
+            return False
 
     async def _init_single_camera(self, cam_name: str) -> bool:
         """Initialize a single camera by name.
@@ -1297,13 +1305,10 @@ class OnvifController:
                 self.ptz_metrics[camera_name].motor_stopped.set()
                 return
 
-            if self.cams[camera_name].get("closing"):
-                # the session is being replaced, so ask again once it is
-                await asyncio.sleep(0.1)
-                return
-
             if not self.cams[camera_name]["init"]:
-                if not await self._init_onvif(camera_name):
+                if not await self._try_init_onvif(camera_name):
+                    # same reason: a caller retrying at once would flood the log
+                    self.ptz_metrics[camera_name].motor_stopped.set()
                     return
 
             status_request = self.cams[camera_name]["status_request"]

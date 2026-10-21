@@ -7,14 +7,21 @@ poll against the old session spun forever and froze the whole ONVIF loop.
 
 import asyncio
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+
+import aiohttp
+from onvif import ONVIFError
 
 from frigate.camera import PTZMetrics
 from frigate.ptz.onvif import OnvifController
 
 CAMERA = "ptz"
+MOVING = SimpleNamespace(
+    MoveStatus=SimpleNamespace(PanTilt="MOVING", Zoom="IDLE"), Position=None
+)
 
 
 class TestReinitWhileTheAutotrackerWaits(unittest.TestCase):
@@ -37,14 +44,23 @@ class TestReinitWhileTheAutotrackerWaits(unittest.TestCase):
         self._on_loop(self._create_lock())
 
         self.old_session_closed = False
+        self.calls_on_closed_session = 0
+        self.aborted_requests = 0
 
         async def get_status(request):
             # a closed aiohttp session raises before awaiting anything
             if self.old_session_closed:
+                self.calls_on_closed_session += 1
                 raise RuntimeError("Session is closed")
 
-            await asyncio.sleep(0.01)
-            raise ConnectionError("still moving, status unknown")
+            await asyncio.sleep(0.02)
+
+            # closing the session fails the request that is still in flight
+            if self.old_session_closed:
+                self.aborted_requests += 1
+                raise aiohttp.ServerDisconnectedError()
+
+            return MOVING
 
         async def close_old_session():
             # the real ONVIFCamera.close() yields while it closes each session
@@ -56,18 +72,31 @@ class TestReinitWhileTheAutotrackerWaits(unittest.TestCase):
             CAMERA: {
                 "onvif": self.old_client,
                 "init": True,
+                "active": True,
+                "features": [],
                 "ptz": SimpleNamespace(GetStatus=get_status),
                 "status_request": MagicMock(),
             }
         }
 
+        self.new_client = MagicMock(close=AsyncMock())
+        self.init_calls: list = []
+
+        async def install_new_client(cam_name):
+            self.controller.cams[cam_name] = {"onvif": self.new_client, "init": False}
+            return True
+
         async def new_client_cannot_connect_yet(camera_name):
+            self.init_calls.append(self.controller.cams[camera_name]["onvif"])
             await asyncio.sleep(0.01)
             return False
 
+        controller._init_single_camera = install_new_client
         controller._init_onvif = new_client_cannot_connect_yet
 
     def _stop_loop(self) -> None:
+        # release a poll left spinning by a failure, so it cannot slow other tests
+        self.controller.stopping = True
         loop = self.controller.loop
         loop.call_soon_threadsafe(loop.stop)
         self.controller.loop_thread.join(timeout=5)
@@ -95,39 +124,98 @@ class TestReinitWhileTheAutotrackerWaits(unittest.TestCase):
         while not self.controller.ptz_metrics[CAMERA].motor_stopped.is_set():
             await self.controller.get_camera_status(CAMERA)
 
-    def _reinit_while_waiting(self) -> None:
-        asyncio.run_coroutine_threadsafe(self._wait_for_motor(), self.controller.loop)
-        reinit = asyncio.run_coroutine_threadsafe(
-            self.controller._reinit_camera(CAMERA), self.controller.loop
+    def _start_waiting(self):
+        wait = asyncio.run_coroutine_threadsafe(
+            self._wait_for_motor(), self.controller.loop
         )
+        time.sleep(0.05)
+        return wait
 
+    def _reinit(self) -> None:
         # a frozen loop never finishes the re-init
-        reinit.result(timeout=5)
+        self._on_loop(self.controller._reinit_camera(CAMERA))
 
-    def test_reinit_finishes_and_the_poll_moves_to_the_new_client(self) -> None:
-        new_client = MagicMock(close=AsyncMock())
+    def test_reinit_finishes_and_the_poll_reaches_the_new_client(self) -> None:
+        self._start_waiting()
 
-        async def install_new_client(cam_name):
-            self.controller.cams[cam_name] = {"onvif": new_client, "init": False}
-            return True
-
-        self.controller._init_single_camera = install_new_client
-
-        self._reinit_while_waiting()
+        self._reinit()
 
         self.old_client.close.assert_awaited_once()
-        self.assertIs(self.controller.cams[CAMERA]["onvif"], new_client)
-        new_client.close.assert_not_awaited()
+        self.assertIs(self.controller.cams[CAMERA]["onvif"], self.new_client)
+        self.assertIn(self.new_client, self.init_calls)
+        self.new_client.close.assert_not_awaited()
+        self.assertEqual(self.calls_on_closed_session, 0)
+
+    def test_no_status_request_is_aborted_by_the_close(self) -> None:
+        # an aborted request is reported as "does not support the ONVIF GetStatus
+        # method", and a body read cut off by the close can hang for a minute
+        self._start_waiting()
+
+        self._reinit()
+
+        self.assertEqual(self.aborted_requests, 0)
+
+    def test_save_while_idle_connects_the_new_client(self) -> None:
+        # nothing else connects it, so the autotracker's next moves would fail
+        self.controller.ptz_metrics[CAMERA].motor_stopped.set()
+
+        self._reinit()
+
+        self.assertEqual(self.init_calls, [self.new_client])
+
+    def test_new_client_that_cannot_connect_releases_the_poll(self) -> None:
+        # bad settings, such as a wrong port: retrying at once flooded the log
+        async def refused(camera_name):
+            self.init_calls.append(self.controller.cams[camera_name]["onvif"])
+            return False
+
+        self.controller._init_onvif = refused
+        wait = self._start_waiting()
+
+        self._reinit()
+
+        wait.result(timeout=2)
+        self.assertLessEqual(len(self.init_calls), 3)
+
+    def test_init_error_releases_the_poll(self) -> None:
+        async def unsupported(camera_name):
+            raise ONVIFError("Device doesn't support service: media")
+
+        self.controller._init_onvif = unsupported
+        wait = self._start_waiting()
+
+        self._reinit()
+
+        # the error is reported, not raised into the autotracker's task
+        self.assertIsNone(wait.result(timeout=2))
 
     def test_removing_onvif_releases_the_poll(self) -> None:
         self.controller.config.cameras[CAMERA].onvif.host = None
+        wait = self._start_waiting()
 
-        self._reinit_while_waiting()
+        self._reinit()
 
         self.old_client.close.assert_awaited_once()
         self.assertNotIn(CAMERA, self.controller.cams)
-        # the poll's next call, after its pause during the close, releases it
-        self.assertTrue(self.controller.ptz_metrics[CAMERA].motor_stopped.wait(2))
+        wait.result(timeout=2)
+
+    def test_a_second_save_before_the_new_client_connects(self) -> None:
+        clients = [MagicMock(close=AsyncMock()), MagicMock(close=AsyncMock())]
+
+        async def install_next_client(cam_name):
+            self.controller.cams[cam_name] = {"onvif": clients[0], "init": False}
+            clients.reverse()
+            return True
+
+        self.controller._init_single_camera = install_next_client
+        self._start_waiting()
+        self._reinit()
+        first_new = self.controller.cams[CAMERA]["onvif"]
+
+        self._reinit()
+
+        first_new.close.assert_awaited_once()
+        self.assertIsNot(self.controller.cams[CAMERA]["onvif"], first_new)
 
     def test_status_of_a_camera_without_onvif_releases_waiters(self) -> None:
         # nothing answers for it any more, such as after its client failed to build
@@ -169,6 +257,7 @@ class TestShutdownDuringReinit(unittest.TestCase):
             return True
 
         controller._init_single_camera = install_new_client
+        controller._init_onvif = AsyncMock(return_value=True)
 
         async def start_reinit() -> asyncio.Task:
             return asyncio.create_task(controller._reinit_camera(CAMERA))
