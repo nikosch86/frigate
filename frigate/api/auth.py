@@ -11,8 +11,9 @@ import secrets
 import time
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs
 
+import requests
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from joserfc import jwt
@@ -30,6 +31,8 @@ from frigate.api.media_auth import (
     check_camera_access,
     deny_response_for_media_uri,
     is_role_restricted,
+    normalize_request_path,
+    split_request_uri,
 )
 from frigate.config import AuthConfig, ProxyConfig
 from frigate.const import CONFIG_DIR, JWT_SECRET_ENV_VAR, PASSWORD_HASH_ALGORITHM
@@ -127,23 +130,18 @@ def require_admin_by_default():
         if path.startswith(EXEMPT_PREFIXES):
             return
 
-        # Dynamic camera path exemption:
-        # Any path whose first segment matches a configured camera name should
-        # bypass the global admin requirement. These endpoints enforce access
-        # via route-level dependencies (e.g. require_camera_access) to ensure
-        # per-camera authorization. This allows non-admin authenticated users
-        # (e.g. viewer role) to access camera-specific resources without
-        # needing admin privileges.
-        try:
-            if path.startswith("/"):
-                first_segment = path.split("/", 2)[1]
-                if (
-                    first_segment
-                    and first_segment in request.app.frigate_config.cameras
-                ):
-                    return
-        except Exception:
-            pass
+        # Camera routes enforce per-camera access via route-level dependencies
+        # (e.g. require_camera_access). Match on the route template, not the raw
+        # path, so a camera named like another namespace (e.g. "faces") can't
+        # waive the admin check for that namespace's routes.
+        route = request.scope.get("route")
+        if (
+            route is not None
+            and route.path.startswith("/{camera_name}")
+            and request.path_params.get("camera_name")
+            in request.app.frigate_config.cameras
+        ):
+            return
 
         # For all other paths, require admin role
         # Internal port requests have admin role set automatically
@@ -917,7 +915,7 @@ def create_user(
     HASH_ITERATIONS = request.app.frigate_config.auth.hash_iterations
     config_roles = list(request.app.frigate_config.auth.roles.keys())
 
-    if not re.match("^[A-Za-z0-9._]+$", body.username):
+    if not re.match(r"^(?!\.+$)[A-Za-z0-9._]+$", body.username):
         return JSONResponse(content={"message": "Invalid username"}, status_code=400)
 
     if body.role not in config_roles:
@@ -1143,11 +1141,44 @@ def _get_stream_owner_cameras(request: Request, stream_name: str) -> set[str]:
     return owner_cameras
 
 
+def _is_existing_go2rtc_stream(request: Request, stream_name: str) -> bool:
+    """Check that `stream_name` names a stream go2rtc already knows about.
+
+    go2rtc turns any `src` that is not an existing stream name into a new ad hoc
+    stream and starts the producer it describes, so the proxied live-stream
+    paths must only ever reference existing streams.
+    """
+    frigate_config = request.app.frigate_config
+
+    if _get_stream_owner_cameras(request, stream_name):
+        return True
+
+    config_streams = getattr(frigate_config.go2rtc, "streams", None) or {}
+    if stream_name in config_streams:
+        return True
+
+    # streams added at runtime through PUT /go2rtc/streams only exist in go2rtc
+    try:
+        r = requests.get("http://127.0.0.1:1984/api/streams", timeout=2)
+    except requests.RequestException:
+        logger.warning("Unable to fetch streams from go2rtc to authorize request")
+        return False
+
+    if not r.ok:
+        return False
+
+    try:
+        return stream_name in r.json()
+    except ValueError:
+        return False
+
+
 # nginx proxies these paths straight to go2rtc with authentication-only checks
 # (see auth_request.conf). Each names the desired stream via the `src` query
 # param, so the camera-level check must happen here in the `/auth` subrequest —
 # `require_go2rtc_stream_access` only guards the REST `/go2rtc/streams/{name}`
-# endpoint, not these proxied live-stream paths.
+# endpoint, not these proxied live-stream paths. The nginx locations are prefix
+# matches, so anything under these paths is proxied too.
 GO2RTC_STREAM_PROXY_PATHS = frozenset(
     {
         "/live/mse/api/ws",
@@ -1157,31 +1188,48 @@ GO2RTC_STREAM_PROXY_PATHS = frozenset(
 )
 
 
+def _is_go2rtc_stream_proxy_request(path: str, request: Request) -> bool:
+    # nginx marks requests routed through the go2rtc stream locations, and the
+    # normalized path catches them if that marker is ever missing
+    if request.headers.get("x-go2rtc-stream-proxy") == "1":
+        return True
+
+    normalized = normalize_request_path(path)
+    return any(normalized.startswith(p) for p in GO2RTC_STREAM_PROXY_PATHS)
+
+
 def deny_response_for_go2rtc_stream(
     original_url: str | None, role: str | None, request: Request
 ) -> int | None:
-    """Block role-restricted users from go2rtc live streams they cannot access.
+    """Block go2rtc live-stream requests the current role may not make.
 
-    Returns 403 when any `src` stream named in `original_url` resolves to a
-    camera outside the role's allow-list (or when no `src` is provided on a
-    stream-proxy path), otherwise None. Mirrors the resolution logic in
+    Returns 403 when any `src` named in `original_url` is not an existing go2rtc
+    stream (for every role), or when it resolves to a camera outside a
+    restricted role's allow-list (or no `src` is provided for such a role),
+    otherwise None. Mirrors the resolution logic in
     `require_go2rtc_stream_access` so substream names map to their owning
     camera correctly.
     """
     if not original_url:
         return None
 
-    parsed = urlparse(original_url)
-    if parsed.path not in GO2RTC_STREAM_PROXY_PATHS:
+    path, query = split_request_uri(original_url)
+    if not _is_go2rtc_stream_proxy_request(path, request):
         return None
 
     frigate_config = request.app.frigate_config
+    sources = parse_qs(query, keep_blank_values=True).get("src", [])
+
+    # an unknown src would make go2rtc create an ad hoc stream from it, which
+    # bypasses the restricted-source checks on PUT /go2rtc/streams
+    for src in sources:
+        if not _is_existing_go2rtc_stream(request, src):
+            return 403
 
     # admin and full-access roles (no allow-list) bypass the camera check
     if not role or not is_role_restricted(role, frigate_config):
         return None
 
-    sources = parse_qs(parsed.query).get("src", [])
     if not sources:
         # a stream-proxy request naming no stream has nothing legitimate to
         # show a restricted user

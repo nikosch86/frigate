@@ -41,6 +41,20 @@ class PushNotification:
     ttl: int = 0
 
 
+def _build_web_pushers(user: str, subs: list[dict[str, Any]]) -> list[WebPusher]:
+    """Build pushers for a user's stored subscriptions, skipping unusable ones."""
+    pushers: list[WebPusher] = []
+
+    for sub in subs:
+        # WebPusher decodes the stored keys and raises on malformed ones
+        try:
+            pushers.append(WebPusher(sub))
+        except Exception:
+            logger.warning("Skipping invalid notification subscription for %s", user)
+
+    return pushers
+
+
 class WebPushClient(Communicator):
     """Frigate wrapper for webpush client."""
 
@@ -56,6 +70,7 @@ class WebPushClient(Communicator):
             for c in self.config.cameras.values()
         }
         self.suspension_broadcaster: Callable[[str, Any, bool], None] | None = None
+        self.config_lock = threading.Lock()
         self.last_camera_notification_time: dict[str, float] = {
             c.name: 0  # type: ignore[misc]
             for c in self.config.cameras.values()
@@ -82,12 +97,11 @@ class WebPushClient(Communicator):
             User.select(User.username, User.notification_tokens).dicts().iterator()
         )
         for user in users:
-            self.web_pushers[user["username"]] = []
-            for sub in user["notification_tokens"]:
-                self.web_pushers[user["username"]].append(WebPusher(sub))
+            self.web_pushers[user["username"]] = _build_web_pushers(
+                user["username"], user["notification_tokens"]
+            )
 
         # notification and auth config updater
-        self._config_update_lock = threading.Lock()
         self.global_config_subscriber = ConfigSubscriber("config/")
         self.config_subscriber = CameraConfigUpdateSubscriber(
             self.config,
@@ -143,10 +157,7 @@ class WebPushClient(Communicator):
                     User.username == user
                 ).execute()
 
-                self.web_pushers[user] = []
-
-                for sub in user_subs:
-                    self.web_pushers[user].append(WebPusher(sub))
+                self.web_pushers[user] = _build_web_pushers(user, user_subs)
 
                 logger.info(
                     f"Cleaned up {len(expired)} notification subscriptions for {user}"
@@ -182,11 +193,20 @@ class WebPushClient(Communicator):
         while not self.stop_event.wait(1):
             self._clear_expired_suspensions()
 
-    def _check_for_config_updates(self) -> None:
-        # publish runs on the mqtt, ipc, websocket and api threads but zmq sockets
-        # are not thread safe, a concurrent drain can take another thread's second
-        # frame and leave that thread blocked in recv until the next config update
-        with self._config_update_lock:
+    def _clear_expired_suspensions(self) -> None:
+        """Reset and broadcast cameras whose suspension window has elapsed."""
+        now = datetime.datetime.now().timestamp()
+        for camera, suspended_until in list(self.suspended_cameras.items()):
+            if suspended_until and now > suspended_until:
+                self.unsuspend_notifications(camera)
+                if self.suspension_broadcaster is not None:
+                    self.suspension_broadcaster(
+                        f"{camera}/notifications/suspended", "0", True
+                    )
+
+    def publish(self, topic: str, payload: Any, retain: bool = False) -> None:
+        """Wrapper for publishing when client is in valid state."""
+        with self.config_lock:
             # check for updated global config (notifications, auth)
             while True:
                 config_topic, config_payload = (
@@ -209,21 +229,6 @@ class WebPushClient(Communicator):
                     self.last_camera_notification_time[camera] = 0
 
                 self._refresh_user_cameras()
-
-    def _clear_expired_suspensions(self) -> None:
-        """Reset and broadcast cameras whose suspension window has elapsed."""
-        now = datetime.datetime.now().timestamp()
-        for camera, suspended_until in list(self.suspended_cameras.items()):
-            if suspended_until and now > suspended_until:
-                self.unsuspend_notifications(camera)
-                if self.suspension_broadcaster is not None:
-                    self.suspension_broadcaster(
-                        f"{camera}/notifications/suspended", "0", True
-                    )
-
-    def publish(self, topic: str, payload: Any, retain: bool = False) -> None:
-        """Wrapper for publishing when client is in valid state."""
-        self._check_for_config_updates()
 
         if topic == "reviews":
             decoded = json.loads(payload)
