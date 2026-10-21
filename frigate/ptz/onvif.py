@@ -713,6 +713,18 @@ class OnvifController:
         except (Fault, ONVIFError, TransportError, Exception) as e:
             logger.warning(f"Onvif sending move request to {camera_name} failed: {e}")
 
+    def _end_failed_move(self, camera_name: str) -> None:
+        """Free a camera whose move command failed, since the move never happened.
+
+        Left busy and moving, every later move would be skipped and Frigate would
+        treat the camera as moving until a restart.
+        """
+        self.cams[camera_name]["active"] = False
+        self.cams[camera_name]["move_command_time"] = None
+        metrics = self.ptz_metrics[camera_name]
+        metrics.motor_stopped.set()
+        metrics.stop_time.value = metrics.frame_time.value
+
     async def _move_relative(self, camera_name: str, pan, tilt, zoom, speed) -> None:
         if "pt-r-fov" not in self.cams[camera_name]["features"]:
             logger.error(f"{camera_name} does not support ONVIF RelativeMove (FOV).")
@@ -784,14 +796,19 @@ class OnvifController:
             }
             move_request["Translation"]["Zoom"] = {"x": zoom}
 
-        await self.cams[camera_name]["ptz"].RelativeMove(move_request)
+        try:
+            await self.cams[camera_name]["ptz"].RelativeMove(move_request)
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.warning(f"RelativeMove for {camera_name} failed: {e}")
+            self._end_failed_move(camera_name)
+        finally:
+            # reset after the move request, also when it failed, since the request
+            # is reused for the next move
+            move_request.Translation.PanTilt.x = 0
+            move_request.Translation.PanTilt.y = 0
 
-        # reset after the move request
-        move_request.Translation.PanTilt.x = 0
-        move_request.Translation.PanTilt.y = 0
-
-        if zoom != 0 and "zoom-r" in self.cams[camera_name]["features"]:
-            del move_request["Translation"]["Zoom"]
+            if zoom != 0 and "zoom-r" in self.cams[camera_name]["features"]:
+                del move_request["Translation"]["Zoom"]
 
         self.cams[camera_name]["active"] = False
 
@@ -841,7 +858,12 @@ class OnvifController:
 
         try:
             await self.cams[camera_name]["ptz"].ContinuousMove(move_request)
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.warning(f"ContinuousMove for {camera_name} failed: {e}")
+            self._end_failed_move(camera_name)
+            return
 
+        try:
             await asyncio.sleep(duration)
 
             await self._stop(camera_name)
@@ -858,7 +880,9 @@ class OnvifController:
                 )
 
         except (Fault, ONVIFError, TransportError, Exception) as e:
-            logger.warning(f"ContinuousMove for {camera_name} failed: {e}")
+            # the camera got the move and may still be moving, so leave the motor
+            # to the status poll
+            logger.warning(f"Stop for {camera_name} failed: {e}")
             self.cams[camera_name]["active"] = False
 
     async def _move_continuous_timed_with_zoom(
@@ -905,12 +929,20 @@ class OnvifController:
 
             try:
                 await self.cams[camera_name]["ptz"].ContinuousMove(move_request)
-                await asyncio.sleep(duration)
-                await self._stop(camera_name)
             except (Fault, ONVIFError, TransportError, Exception) as e:
                 logger.warning(
                     f"ContinuousMove with zoom for {camera_name} failed: {e}"
                 )
+                self._end_failed_move(camera_name)
+                return
+
+            try:
+                await asyncio.sleep(duration)
+                await self._stop(camera_name)
+            except (Fault, ONVIFError, TransportError, Exception) as e:
+                # the camera got the move and may still be moving, so leave the
+                # motor to the status poll
+                logger.warning(f"Stop for {camera_name} failed: {e}")
                 self.cams[camera_name]["active"] = False
 
     async def _zoom_continuous_timed(
@@ -928,6 +960,12 @@ class OnvifController:
 
         try:
             await self.cams[camera_name]["ptz"].ContinuousMove(move_request)
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.warning(f"Zoom ContinuousMove for {camera_name} failed: {e}")
+            self._end_failed_move(camera_name)
+            return
+
+        try:
             await asyncio.sleep(duration)
             await self._stop(camera_name)
 
@@ -939,7 +977,9 @@ class OnvifController:
                 ].frame_time.value
 
         except (Fault, ONVIFError, TransportError, Exception) as e:
-            logger.warning(f"Zoom ContinuousMove for {camera_name} failed: {e}")
+            # the camera got the move and may still be moving, so leave the motor
+            # to the status poll
+            logger.warning(f"Stop for {camera_name} failed: {e}")
             self.cams[camera_name]["active"] = False
 
     async def _move_to_preset(self, camera_name: str, preset: str) -> None:
@@ -955,12 +995,17 @@ class OnvifController:
         move_request = self.cams[camera_name]["move_request"]
         preset_token = self.cams[camera_name]["presets"][preset]
 
-        await self.cams[camera_name]["ptz"].GotoPreset(
-            {
-                "ProfileToken": move_request.ProfileToken,
-                "PresetToken": preset_token,
-            }
-        )
+        try:
+            await self.cams[camera_name]["ptz"].GotoPreset(
+                {
+                    "ProfileToken": move_request.ProfileToken,
+                    "PresetToken": preset_token,
+                }
+            )
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.warning(f"GotoPreset for {camera_name} failed: {e}")
+            self._end_failed_move(camera_name)
+            return
 
         self.cams[camera_name]["active"] = False
 
@@ -1051,7 +1096,12 @@ class OnvifController:
 
         logger.debug(f"{camera_name}: Absolute zoom: {zoom}")
 
-        await self.cams[camera_name]["ptz"].AbsoluteMove(move_request)
+        try:
+            await self.cams[camera_name]["ptz"].AbsoluteMove(move_request)
+        except (Fault, ONVIFError, TransportError, Exception) as e:
+            logger.warning(f"AbsoluteMove for {camera_name} failed: {e}")
+            self._end_failed_move(camera_name)
+            return
 
         self.cams[camera_name]["active"] = False
 

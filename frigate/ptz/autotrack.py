@@ -1178,6 +1178,18 @@ class PtzAutoTracker:
         )
 
     async def _process_move_queue(self, camera):
+        # a move that fails in an unexpected way must not end autotracking for the
+        # camera until a restart, so keep consuming after logging it
+        while True:
+            try:
+                await self._consume_move_queue(camera)
+                return
+            except Exception:
+                logger.exception("%s: autotracking move failed", camera)
+                # throttle a failure that repeats at once
+                await asyncio.sleep(1)
+
+    async def _consume_move_queue(self, camera):
         move_queue = self.move_queues[camera]
 
         while not self.stop_event.is_set():

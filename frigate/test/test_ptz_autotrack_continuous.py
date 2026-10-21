@@ -1090,6 +1090,20 @@ class TestProcessMoveQueueContinuous(unittest.TestCase):
         tracker.onvif._move_relative.assert_awaited_once_with(CAMERA, 0.5, 0.0, 0, 1)
         tracker.onvif._zoom_absolute.assert_awaited_once_with(CAMERA, 0.6, 1)
 
+    def test_queue_survives_an_unexpected_move_error(self) -> None:
+        # such as a KeyError once ONVIF is removed from the camera's config; the
+        # queue task used to end and the camera never moved again
+        tracker = self._tracker(mode="relative_fov", zooming=ZoomingModeEnum.disabled)
+        tracker.onvif._move_relative.side_effect = [KeyError(CAMERA), None]
+
+        with (
+            patch("frigate.ptz.autotrack.asyncio.sleep", AsyncMock()),
+            self.assertLogs("frigate.ptz.autotrack", level="ERROR"),
+        ):
+            self._run_queue(tracker, (1.0, 0.5, 0.0, 0.0), (2.0, 0.5, 0.0, 0.0))
+
+        self.assertEqual(tracker.onvif._move_relative.await_count, 2)
+
     def test_tiny_pan_is_dropped(self) -> None:
         tracker = self._tracker()
 
