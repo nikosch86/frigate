@@ -126,7 +126,8 @@ class TestReinitWhileTheAutotrackerWaits(unittest.TestCase):
 
         self.old_client.close.assert_awaited_once()
         self.assertNotIn(CAMERA, self.controller.cams)
-        self.assertTrue(self.controller.ptz_metrics[CAMERA].motor_stopped.is_set())
+        # the poll's next call, after its pause during the close, releases it
+        self.assertTrue(self.controller.ptz_metrics[CAMERA].motor_stopped.wait(2))
 
     def test_status_of_a_camera_without_onvif_releases_waiters(self) -> None:
         # nothing answers for it any more, such as after its client failed to build
@@ -135,6 +136,52 @@ class TestReinitWhileTheAutotrackerWaits(unittest.TestCase):
         self._on_loop(self.controller.get_camera_status(CAMERA))
 
         self.assertTrue(self.controller.ptz_metrics[CAMERA].motor_stopped.is_set())
+
+
+class TestShutdownDuringReinit(unittest.TestCase):
+    def test_old_session_is_closed_when_shutdown_cancels_the_reinit(self) -> None:
+        # a shutdown right after a settings save cancels the poll mid re-init
+        controller = OnvifController.__new__(OnvifController)
+        controller.loop = asyncio.new_event_loop()
+        controller.loop_thread = threading.Thread(
+            target=controller.loop.run_forever, daemon=True
+        )
+        controller.loop_thread.start()
+        controller.config_subscriber = MagicMock()
+        controller.config = MagicMock()
+        controller.config.cameras = {CAMERA: MagicMock()}
+        controller.camera_configs = {CAMERA: controller.config.cameras[CAMERA]}
+        controller.failed_cams = {}
+        controller.status_locks = {}
+        closing = threading.Event()
+
+        async def slow_first_close():
+            # the first close is the re-init's, which the shutdown interrupts
+            if not closing.is_set():
+                closing.set()
+                await asyncio.sleep(3600)
+
+        old_client = MagicMock(close=AsyncMock(side_effect=slow_first_close))
+        controller.cams = {CAMERA: {"onvif": old_client, "init": True}}
+
+        async def install_new_client(cam_name):
+            controller.cams[cam_name] = {"onvif": MagicMock(close=AsyncMock())}
+            return True
+
+        controller._init_single_camera = install_new_client
+
+        async def start_reinit() -> asyncio.Task:
+            return asyncio.create_task(controller._reinit_camera(CAMERA))
+
+        controller.config_poll = asyncio.run_coroutine_threadsafe(
+            start_reinit(), controller.loop
+        ).result(timeout=5)
+        self.assertTrue(closing.wait(timeout=5))
+
+        controller.close()
+
+        # the interrupted close does not count, so the old session needs a second one
+        self.assertEqual(old_client.close.await_count, 2)
 
 
 if __name__ == "__main__":
