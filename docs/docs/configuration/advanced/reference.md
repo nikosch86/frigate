@@ -1039,6 +1039,10 @@ cameras:
         # A higher value will zoom in more on a tracked object, but Frigate may lose tracking more quickly.
         # The value should be between 0.1 and 0.75
         zoom_factor: 0.3
+        # Optional: How the camera scales a relative zoom, used with relative zooming. (default: shown below)
+        #   frame - relative to the current view, as on Dahua and Amcrest cameras
+        #   range - a fraction of the camera's full zoom range, as the ONVIF specification defines it (needs assumed_zoom_range)
+        relative_zoom_scale: frame
         # Optional: list of objects to track from labelmap.txt (default: shown below)
         track:
           - person
@@ -1058,8 +1062,9 @@ cameras:
         continuous_speed: 2.0
         # Optional: Zoom speed in zoom units per second at velocity 1.0 for continuous zooming. (default: shown below)
         continuous_zoom_speed: 1.0
-        # Optional: Zoom range in the camera's native units (as shown on its OSD) for cameras that do not report zoom position.
-        # Example: [1, 30] for a 30x optical zoom camera. (default: 1x to 30x is assumed when unset)
+        # Optional: Zoom range in the camera's native units (as shown on its OSD) for cameras that do not report zoom position,
+        # and for relative zooming with relative_zoom_scale: range, which requires it.
+        # Example: [1, 30] for a 30x optical zoom camera. (default: unset, a camera without zoom position then assumes 1x to 30x)
         assumed_zoom_range: None
         # Optional: Zoom level at the return preset in the camera's native units, for cameras that do not report zoom position.
         # Must lie within assumed_zoom_range. (default: the middle of the zoom range is assumed when unset)

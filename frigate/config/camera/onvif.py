@@ -6,7 +6,12 @@ from ..base import FrigateBaseModel
 from ..env import EnvString
 from .objects import DEFAULT_TRACKED_OBJECTS
 
-__all__ = ["OnvifConfig", "PtzAutotrackConfig", "ZoomingModeEnum"]
+__all__ = [
+    "OnvifConfig",
+    "PtzAutotrackConfig",
+    "RelativeZoomScaleEnum",
+    "ZoomingModeEnum",
+]
 
 
 class ZoomingModeEnum(str, Enum):
@@ -14,6 +19,11 @@ class ZoomingModeEnum(str, Enum):
     absolute = "absolute"
     relative = "relative"
     continuous = "continuous"
+
+
+class RelativeZoomScaleEnum(str, Enum):
+    frame = "frame"
+    range = "range"
 
 
 class PtzAutotrackConfig(FrigateBaseModel):
@@ -38,6 +48,11 @@ class PtzAutotrackConfig(FrigateBaseModel):
         description="Control zoom level on tracked objects. Lower values keep more scene in view; higher values zoom in closer but may lose tracking. Values between 0.1 and 0.75.",
         ge=0.1,
         le=0.75,
+    )
+    relative_zoom_scale: RelativeZoomScaleEnum = Field(
+        default=RelativeZoomScaleEnum.frame,
+        title="Relative zoom scale",
+        description="How the camera scales a relative zoom: frame (relative to the current view, as on Dahua and Amcrest cameras) or range (a fraction of the full zoom range, as the ONVIF specification defines it). range needs assumed_zoom_range.",
     )
     track: list[str] = Field(
         default=DEFAULT_TRACKED_OBJECTS,
@@ -84,7 +99,7 @@ class PtzAutotrackConfig(FrigateBaseModel):
         min_length=2,
         max_length=2,
         title="Assumed zoom range",
-        description="Zoom range in the camera's native units (as shown on the OSD) for cameras that do not report zoom position. Example: [1, 30] for a 30x optical zoom camera.",
+        description="Zoom range in the camera's native units (as shown on the OSD) for cameras that do not report zoom position, and for relative zooming with relative_zoom_scale range. Example: [1, 30] for a 30x optical zoom camera.",
     )
     preset_zoom_level: float | None = Field(
         default=None,
@@ -132,6 +147,20 @@ class PtzAutotrackConfig(FrigateBaseModel):
                     f"preset_zoom_level ({self.preset_zoom_level}) must be within "
                     f"assumed_zoom_range ({min_zoom}, {max_zoom})"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def validate_range_zoom_scale(self):
+        """Validate that relative zooming on the range scale knows the zoom range."""
+        if (
+            self.zooming == ZoomingModeEnum.relative
+            and self.relative_zoom_scale == RelativeZoomScaleEnum.range
+            and self.assumed_zoom_range is None
+        ):
+            raise ValueError(
+                "relative_zoom_scale range needs assumed_zoom_range, the camera's "
+                "native zoom range (e.g., [1, 4] for 1x-4x zoom)"
+            )
         return self
 
     @field_validator("movement_weights", mode="before")

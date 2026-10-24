@@ -21,7 +21,12 @@ from norfair.camera_motion import (
 
 from frigate.camera import PTZMetrics
 from frigate.comms.dispatcher import Dispatcher
-from frigate.config import CameraConfig, FrigateConfig, ZoomingModeEnum
+from frigate.config import (
+    CameraConfig,
+    FrigateConfig,
+    RelativeZoomScaleEnum,
+    ZoomingModeEnum,
+)
 from frigate.config.camera.updater import (
     CameraConfigUpdateEnum,
     CameraConfigUpdateSubscriber,
@@ -805,12 +810,23 @@ class PtzAutoTracker:
                     self.config.cameras[camera].onvif.autotracking.zooming
                     == ZoomingModeEnum.relative
                 ):
-                    # relative move to -0.01
+                    # a relative zoom of 0.01 spans nearly the whole range on a
+                    # frame scale camera, a range scale camera needs 1 for that
+                    zoom_step = (
+                        1
+                        if self.config.cameras[
+                            camera
+                        ].onvif.autotracking.relative_zoom_scale
+                        == RelativeZoomScaleEnum.range
+                        else 1e-2
+                    )
+
+                    # relative zoom out
                     if not await self.onvif._move_relative(
                         camera,
                         0,
                         0,
-                        -1e-2,
+                        -zoom_step,
                         1,
                     ):
                         raise CalibrationMoveFailed
@@ -821,12 +837,12 @@ class PtzAutoTracker:
                     zoom_out_values.append(self.ptz_metrics[camera].zoom_level.value)
 
                     zoom_start_time = time.time()
-                    # relative move to 0.01
+                    # relative zoom in
                     if not await self.onvif._move_relative(
                         camera,
                         0,
                         0,
-                        1e-2,
+                        zoom_step,
                         1,
                     ):
                         raise CalibrationMoveFailed
@@ -842,7 +858,7 @@ class PtzAutoTracker:
                         camera,
                         -1,
                         -1,
-                        -1e-2,
+                        -zoom_step,
                         1,
                     ):
                         raise CalibrationMoveFailed
@@ -856,7 +872,7 @@ class PtzAutoTracker:
                         camera,
                         1,
                         1,
-                        1e-2,
+                        zoom_step,
                         1,
                     ):
                         raise CalibrationMoveFailed
@@ -1970,7 +1986,13 @@ class PtzAutoTracker:
 
             if np.any(average_velocity):
                 # Calculate the intended change in zoom level
-                zoom_change = (1 - abs(zoom)) * (1 if zoom >= 0 else -1)
+                if (
+                    camera_config.onvif.autotracking.relative_zoom_scale
+                    == RelativeZoomScaleEnum.range
+                ):
+                    zoom_change = zoom
+                else:
+                    zoom_change = (1 - abs(zoom)) * (1 if zoom >= 0 else -1)
 
                 # Calculate new zoom level and clamp to [0, 1]
                 new_zoom = max(
@@ -2062,15 +2084,33 @@ class PtzAutoTracker:
 
         # relative zooming concurrently with pan/tilt
         elif camera_config.onvif.autotracking.zooming == ZoomingModeEnum.relative:
+            range_scale = (
+                camera_config.onvif.autotracking.relative_zoom_scale
+                == RelativeZoomScaleEnum.range
+            )
             # this is our initial zoom in on a new object
             if "target_box" not in self.tracked_object_metrics[camera]:
                 zoom = target_box ** self.zoom_factor[camera]
-                if zoom > self.tracked_object_metrics[camera]["max_target_box"]:
+                if range_scale:
+                    # a box without area has no size to zoom to
+                    zoom = (
+                        self._get_range_zoom_amount(
+                            camera,
+                            self.tracked_object_metrics[camera]["max_target_box"]
+                            / zoom,
+                        )
+                        if zoom > 0
+                        else 0
+                    )
+                elif zoom > self.tracked_object_metrics[camera]["max_target_box"]:
                     zoom = -(1 - zoom)
                 logger.debug(
                     f"{camera}: target box: {target_box}, max: {self.tracked_object_metrics[camera]['max_target_box']}, calc zoom: {zoom}"
                 )
             else:
+                # the area prediction adds the object's whole area, not its change,
+                # which would pull the range scale's exact zoom off the limit
+                area_prediction_time = 0 if range_scale else predicted_movement_time
                 if (
                     result := self._should_zoom_in(
                         camera,
@@ -2078,18 +2118,18 @@ class PtzAutoTracker:
                         predicted_box
                         if camera_config.onvif.autotracking.movement_weights
                         else obj.obj_data["box"],
-                        predicted_movement_time,
+                        area_prediction_time,
                         debug_zoom,
                     )
                 ) is not None:
-                    if predicted_movement_time:
+                    if area_prediction_time:
                         calculated_target_box = self.tracked_object_metrics[camera][
                             "target_box"
                         ] + self._predict_area_after_time(
-                            camera, predicted_movement_time
+                            camera, area_prediction_time
                         ) / (camera_width * camera_height)
                         logger.debug(
-                            f"{camera}: Zooming prediction: predicted movement time: {predicted_movement_time}, original box: {self.tracked_object_metrics[camera].get('target_box', 'not set')}, calculated box: {calculated_target_box}"
+                            f"{camera}: Zooming prediction: predicted movement time: {area_prediction_time}, original box: {self.tracked_object_metrics[camera].get('target_box', 'not set')}, calculated box: {calculated_target_box}"
                         )
                     else:
                         calculated_target_box = self.tracked_object_metrics[camera][
@@ -2100,16 +2140,26 @@ class PtzAutoTracker:
                         self.tracked_object_metrics[camera]["max_target_box"]
                         / calculated_target_box
                     )
-                    zoom = (ratio - 1) / (ratio + 1)
-                    logger.debug(
-                        f"{camera}: limit: {self.tracked_object_metrics[camera]['max_target_box']}, ratio: {ratio} zoom calculation: {zoom}"
-                    )
-                    if not result:
-                        # zoom out with special condition if zooming out because of velocity, edges, etc.
-                        zoom = -(1 - zoom) if zoom > 0 else -(zoom * 2 + 1)
-                    if result:
-                        # zoom in
-                        zoom = 1 - zoom if zoom > 0 else (zoom * 2 + 1)
+                    if range_scale:
+                        zoom = self._get_range_zoom_amount(camera, ratio)
+                        logger.debug(
+                            f"{camera}: limit: {self.tracked_object_metrics[camera]['max_target_box']}, ratio: {ratio} range zoom calculation: {zoom}"
+                        )
+                        if not result and ratio * AUTOTRACKING_ZOOM_OUT_HYSTERESIS >= 1:
+                            # an object under the zoom out limit only zooms out for
+                            # velocity, edges, etc., so take at least a tenth of the range
+                            zoom = min(zoom, -0.1)
+                    else:
+                        zoom = (ratio - 1) / (ratio + 1)
+                        logger.debug(
+                            f"{camera}: limit: {self.tracked_object_metrics[camera]['max_target_box']}, ratio: {ratio} zoom calculation: {zoom}"
+                        )
+                        if not result:
+                            # zoom out with special condition if zooming out because of velocity, edges, etc.
+                            zoom = -(1 - zoom) if zoom > 0 else -(zoom * 2 + 1)
+                        if result:
+                            # zoom in
+                            zoom = 1 - zoom if zoom > 0 else (zoom * 2 + 1)
 
         # continuous zoom (velocity-based) for cameras without position control
         elif camera_config.onvif.autotracking.zooming == ZoomingModeEnum.continuous:
@@ -2143,6 +2193,32 @@ class PtzAutoTracker:
         logger.debug(f"{camera}: Zooming: {result} Zoom amount: {zoom}")
 
         return zoom
+
+    def _get_range_zoom_amount(self, camera: str, ratio: float) -> float:
+        """Return the relative zoom that brings the object to the zoom limit.
+
+        For cameras that take a relative zoom as a fraction of their full zoom
+        range, with zoom position and relative zoom linear in magnification.
+
+        Args:
+            camera: Camera name
+            ratio: The zoom limit divided by the object's target box
+
+        Returns:
+            Relative zoom, clamped to the camera's zoom range
+        """
+        min_zoom, max_zoom = self.config.cameras[
+            camera
+        ].onvif.autotracking.assumed_zoom_range
+        zoom_range = max_zoom - min_zoom
+        magnification = (
+            min_zoom + self.ptz_metrics[camera].zoom_level.value * zoom_range
+        )
+        # the target box is the object's area to the power of zoom_factor, and
+        # the area grows with the square of the magnification
+        target = magnification * ratio ** (1 / (2 * self.zoom_factor[camera]))
+
+        return (min(max(target, min_zoom), max_zoom) - magnification) / zoom_range
 
     def is_autotracking(self, camera: str):
         return self.tracked_object[camera] is not None

@@ -65,6 +65,7 @@ Navigate to <NavPath path="Settings > Camera configuration > ONVIF" /> for the d
 | **Calibrate on start**      | Calibrate the camera on startup by measuring PTZ motor speed (default: false)                                                           |
 | **Zoom mode**               | Zoom mode during autotracking: `disabled`, `absolute`, `relative`, or `continuous` (default: disabled)                                  |
 | **Zoom Factor**             | Controls zoom behavior on tracked objects, between 0.1 and 0.75. Lower keeps more scene visible; higher zooms in more (default: 0.3)    |
+| **Relative zoom scale**     | How the camera scales a relative zoom: `frame` (Dahua, Amcrest) or `range` (ONVIF spec, needs assumed zoom range) (default: frame)      |
 | **Tracked objects**         | List of object types to track (default: person)                                                                                         |
 | **Required Zones**          | Zones an object must enter to begin autotracking                                                                                        |
 | **Return Preset**           | Name of ONVIF preset in camera firmware to return to when tracking ends (default: home)                                                 |
@@ -72,7 +73,7 @@ Navigate to <NavPath path="Settings > Camera configuration > ONVIF" /> for the d
 | **Move start grace period** | Seconds after a relative move during which an idle ONVIF status is ignored unless the camera has reported moving (default: 0, disabled) |
 | **Continuous move speed**   | Pan/tilt speed in FOV units per second at velocity 1.0, used for cameras without FOV RelativeMove support (default: 2.0)                |
 | **Continuous zoom speed**   | Zoom speed in zoom units per second at velocity 1.0 for continuous zooming (default: 1.0)                                               |
-| **Assumed zoom range**      | Native zoom range, e.g. `[1, 30]`, for cameras that do not report zoom position (default: unset, 1x to 30x assumed)                     |
+| **Assumed zoom range**      | Native zoom range, e.g. `[1, 30]`. Required for the `range` zoom scale; unset, a camera without zoom position assumes 1x to 30x         |
 | **Preset zoom level**       | Native zoom level at the return preset for cameras that do not report zoom position (default: unset, middle of the range assumed)       |
 
 </TabItem>
@@ -125,6 +126,10 @@ cameras:
         # A higher value will zoom in more on a tracked object, but Frigate may lose tracking more quickly.
         # The value should be between 0.1 and 0.75
         zoom_factor: 0.3
+        # Optional: How the camera scales a relative zoom, used with relative zooming. (default: shown below)
+        #   frame - relative to the current view, as on Dahua and Amcrest cameras
+        #   range - a fraction of the camera's full zoom range, as the ONVIF specification defines it (needs assumed_zoom_range)
+        relative_zoom_scale: frame
         # Optional: list of objects to track from labelmap.txt (default: shown below)
         track:
           - person
@@ -144,8 +149,9 @@ cameras:
         continuous_speed: 2.0
         # Optional: Zoom speed in zoom units per second at velocity 1.0 for continuous zooming. (default: shown below)
         continuous_zoom_speed: 1.0
-        # Optional: Zoom range in the camera's native units (as shown on its OSD) for cameras that do not report zoom position.
-        # Example: [1, 30] for a 30x optical zoom camera. (default: 1x to 30x is assumed when unset)
+        # Optional: Zoom range in the camera's native units (as shown on its OSD) for cameras that do not report zoom position,
+        # and for relative zooming with relative_zoom_scale: range, which requires it.
+        # Example: [1, 30] for a 30x optical zoom camera. (default: unset, a camera without zoom position then assumes 1x to 30x)
         assumed_zoom_range: None
         # Optional: Zoom level at the return preset in the camera's native units, for cameras that do not report zoom position.
         # Must lie within assumed_zoom_range. (default: the middle of the zoom range is assumed when unset)
@@ -204,6 +210,8 @@ Zooming is a very experimental feature and may use significantly more CPU when t
 Absolute zooming makes zoom movements separate from pan/tilt movements. Most PTZ cameras will support absolute zooming. Absolute zooming was developed to be very conservative to work best with a variety of cameras and scenes. Absolute zooming usually will not occur until an object has stopped moving or is moving very slowly.
 
 Relative zooming attempts to make a zoom movement concurrently with any pan/tilt movements. It was tested to work with some Dahua and Amcrest PTZs. But the ONVIF specification indicates that there no assumption about how the generic zoom range is mapped to magnification, field of view or other physical zoom dimension when using relative zooming. So if relative zooming behavior is erratic or just doesn't work, try absolute zooming.
+
+Cameras also differ in how they scale a relative zoom. By default (`relative_zoom_scale: frame`), Frigate expects the behavior of the Dahua and Amcrest PTZs that relative zooming was developed with: the zoom value is relative to the current view, and a value close to 1 is a small zoom. Cameras that follow the ONVIF specification instead take the value as a fraction of their full zoom range, so a value close to 1 zooms across nearly the whole range. On such a camera the default makes the zoom swing in and out on an object that is not moving. For these cameras, set `relative_zoom_scale: range` and set `assumed_zoom_range` to the camera's native zoom range, for example `[1, 4]` for a 4x zoom. Frigate then works out how far to zoom from the zoom position the camera reports, assuming that both the zoom position and the relative zoom are linear in magnification. Recalibrate the camera after changing `relative_zoom_scale`, since calibration times the relative zoom on that scale.
 
 Continuous zooming is for cameras that support neither absolute nor relative zoom but do offer `ContinuousMove` zooming. The zoom motor runs at a fixed velocity for a duration derived from `continuous_zoom_speed`. Because such cameras usually do not report their zoom position, Frigate estimates it from timing; set `assumed_zoom_range` and `preset_zoom_level` to your camera's native values so the estimate starts and stays accurate.
 

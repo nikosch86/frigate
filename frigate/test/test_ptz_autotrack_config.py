@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from frigate.config.camera.onvif import (
     OnvifConfig,
     PtzAutotrackConfig,
+    RelativeZoomScaleEnum,
     ZoomingModeEnum,
 )
 
@@ -147,6 +148,39 @@ class TestPresetZoomLevel(unittest.TestCase):
             PtzAutotrackConfig(assumed_zoom_range=[1, 30], preset_zoom_level=31)
         with self.assertRaisesRegex(ValidationError, "must be within"):
             PtzAutotrackConfig(assumed_zoom_range=[2, 30], preset_zoom_level=1)
+
+
+class TestRelativeZoomScale(unittest.TestCase):
+    def test_defaults_to_frame(self) -> None:
+        self.assertEqual(
+            PtzAutotrackConfig().relative_zoom_scale, RelativeZoomScaleEnum.frame
+        )
+
+    def test_range_with_zoom_range_is_accepted(self) -> None:
+        config = PtzAutotrackConfig(
+            zooming="relative", relative_zoom_scale="range", assumed_zoom_range=[1, 4]
+        )
+
+        self.assertEqual(config.relative_zoom_scale, RelativeZoomScaleEnum.range)
+
+    def test_range_for_relative_zooming_needs_zoom_range(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "needs assumed_zoom_range"):
+            PtzAutotrackConfig(zooming="relative", relative_zoom_scale="range")
+
+    def test_range_without_relative_zooming_needs_no_zoom_range(self) -> None:
+        config = PtzAutotrackConfig(zooming="absolute", relative_zoom_scale="range")
+
+        self.assertEqual(config.relative_zoom_scale, RelativeZoomScaleEnum.range)
+
+    def test_frame_for_relative_zooming_needs_no_zoom_range(self) -> None:
+        config = PtzAutotrackConfig(zooming="relative", relative_zoom_scale="frame")
+
+        self.assertIsNone(config.assumed_zoom_range)
+        self.assertEqual(config.relative_zoom_scale, RelativeZoomScaleEnum.frame)
+
+    def test_rejects_unknown_scale(self) -> None:
+        with self.assertRaises(ValidationError):
+            PtzAutotrackConfig(relative_zoom_scale="magnification")
 
 
 class TestOnvifConfigSunbaQuirks(unittest.TestCase):
