@@ -9,7 +9,7 @@ import CommunityBadge from '@site/src/components/CommunityBadge';
 
 Cameras that output H.264 video and AAC audio will offer the most compatibility with all features of Frigate and Home Assistant. It is also helpful if your camera supports multiple substreams to allow different resolutions to be used for detection, streaming, and recordings without re-encoding.
 
-I recommend Dahua, Hikvision, and Amcrest in that order. Dahua edges out Hikvision because they are easier to find and order, not because they are better cameras. I personally use Dahua cameras because they are easier to purchase directly. In my experience Dahua and Hikvision both have multiple streams with configurable resolutions and frame rates and rock solid streams. They also both have models with large sensors well known for excellent image quality at night. Not all the models are equal. Larger sensors are better than higher resolutions; especially at night. Amcrest is the fallback recommendation because they are rebranded Dahuas. They are rebranding the lower end models with smaller sensors or less configuration options.
+I recommend Dahua and Hikvision. Dahua edges out Hikvision because they are easier to find and order, not because they are better cameras. I personally use Dahua cameras because they are easier to purchase directly. In my experience Dahua and Hikvision both have multiple streams with configurable resolutions and frame rates and rock solid streams. They also both have models with large sensors well known for excellent image quality at night. Not all the models are equal. Larger sensors are better than higher resolutions; especially at night.
 
 WiFi cameras are not recommended as [their streams are less reliable and cause connection loss and/or lost video data](https://ipcamtalk.com/threads/camera-conflicts.68142/#post-738821), especially when more than a few WiFi cameras will be used at the same time.
 
@@ -17,10 +17,9 @@ Many users have reported various issues with 4K-plus Reolink cameras, it is best
 
 Here are some of the cameras I recommend:
 
-- <a href="https://amzn.to/4fwoNWA" target="_blank" rel="nofollow noopener sponsored">Loryta(Dahua) IPC-T549M-ALED-S3</a> (affiliate link)
-- <a href="https://amzn.to/3YXpcMw" target="_blank" rel="nofollow noopener sponsored">Loryta(Dahua) IPC-T54IR-AS</a> (affiliate link)
-- <a href="https://amzn.to/3AvBHoY" target="_blank" rel="nofollow noopener sponsored">Amcrest IP5M-T1179EW-AI-V3</a> (affiliate link)
-- <a href="https://www.bhphotovideo.com/c/product/1705511-REG/hikvision_colorvu_ds_2cd2387g2p_lsu_sl_8mp_network.html" target="_blank" rel="nofollow noopener">HIKVISION DS-2CD2387G2P-LSU/SL ColorVu 8MP Panoramic Turret IP Camera</a> (affiliate link)
+- <a href="https://link.amazon/B0hnw1JEZ" target="_blank" rel="nofollow noopener sponsored">GemaVision(Dahua) IPC-T549M-ALED-S3</a> (affiliate link)
+- <a href="https://link.amazon/B06naLGqL" target="_blank" rel="nofollow noopener sponsored">GemaVision(Dahua) IPC-T54IR-AS</a> (affiliate link)
+- <a href="https://link.amazon/B0iD97zC7" target="_blank" rel="nofollow noopener sponsored">HIKVISION DS-2CD2387G2P-LSU/SL ColorVu 8MP Panoramic Turret IP Camera</a> (affiliate link)
 
 I may earn a small commission for my endorsement, recommendation, testimonial, or link to any products or services from this website.
 
@@ -70,6 +69,9 @@ Frigate supports multiple different detectors that work on different types of ha
 - [ROCm](#rocm---amd-gpu): ROCm can run on AMD Discrete GPUs to provide efficient object detection
   - [Supports limited model architectures](../../configuration/object_detectors#amdrocm-gpu-detector)
   - Runs best on discrete AMD GPUs
+- <CommunityBadge /> [XDNA2 (Ryzen AI)](#amd-xdna2): AMD XDNA2 NPU (sub-watt power AI/ML processor separate to the GPU) inside Strix and other "AI" branded AMD platforms
+  - Has only been tested with YOLOv9, in theory other graphs may be compiled too.
+  - Runs via ZMQ proxy which adds some latency, only recommended for local connection
 
 **Apple Silicon**
 
@@ -295,6 +297,32 @@ The inference time of a rk3588 with all 3 cores enabled is typically 25-30 ms fo
 | Name             | AXERA AX650N/AX8850N Inference Time |
 | ---------------- | ----------------------------------- |
 | yolov9-tiny      | ~ 4 ms                              |
+
+### AMD Ryzen AI / XDNA2
+
+Frigate supports AMD XDNA2 NPUs through the community-maintained
+frigate-xdna ZMQ sidecar. It works with stock Frigate and supports
+Frigate+ models or compatible local YOLO ONNX models. Models are compiled
+once on the target system and cached for subsequent use.
+
+Currently qualified on **Ryzen AI Max 300 / Strix Halo**. Other XDNA2
+devices are not yet qualified; XDNA1 is unsupported.
+
+Measured YOLOv9 detector latency on Strix Halo:
+
+| Model | 320 | 640 |
+| ----- | ---: | ---: |
+| YOLOv9-T | ~7.4 ms | unsupported |
+| YOLOv9-S | ~9.0 ms | ~20.0 ms |
+| YOLOv9-M | ~13.1 ms | ~34.4 ms |
+| YOLOv9-C | ~14.1 ms | ~35.2 ms |
+| YOLOv9-E | ~69.4 ms | ~224.8 ms |
+
+**YOLOv9-C at 320 is the recommended quality/performance balance.**
+C at 640 is also usable where the lower throughput is acceptable.
+
+Setup, model preparation, and compatibility details are available
+[in the frigate-xdna documentation](https://github.com/mitchins/frigate-xdna).
 
 ## What does Frigate use the CPU for and what does it use a detector for? (ELI5 Version)
 

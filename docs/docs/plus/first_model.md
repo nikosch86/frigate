@@ -17,7 +17,7 @@ For more detailed recommendations, you can refer to the docs on [annotating](./a
 
 ## Step 2: Submit a model request
 
-Once you have an initial set of verified images, you can request a model on the Models page. For guidance on choosing a model type, refer to [this part of the documentation](./index.md#available-model-types). If you are unsure which type to request, you can test the base model for each version from the "Base Models" tab. Each model request requires 1 of the 12 trainings that you receive with your annual subscription. This model will support all [label types available](./index.md#available-label-types) even if you do not submit any examples for those labels. Model creation can take up to 36 hours.
+Once you have an initial set of verified images, you can request a model on the Models page. For guidance on choosing a model type, refer to [available model types](./index.md#available-model-types) and [choosing a model](./choosing_a_model.md). If you are unsure which type to request, you can test the base model for each version from the "Base Models" tab. For most hardware, `yolov9` is recommended; `mobiledet` is a legacy model type and will be removed in 2027. Each model request requires 1 of the 12 trainings that you receive with your annual subscription. This model will support all [label types available](./index.md#available-label-types) even if you do not submit any examples for those labels. Model creation can take up to 36 hours.
 ![Plus Models Page](/img/plus/plus-models.jpg)
 
 ## Step 3: Set your model
@@ -64,20 +64,20 @@ Frigate+ models generally have much higher scores than the default model provide
 <ConfigTabs>
 <TabItem value="ui">
 
-Navigate to <NavPath path="Settings > Global configuration > Objects" />. Under **Object filters**, set **Min Score** and **Threshold** for each object type, then click **Save**.
+Navigate to <NavPath path="Settings > Global configuration > Objects" />. Under **Object filters**, set **Minimum confidence** and **Confidence threshold** for each object type, then click **Save**.
 
-| Object            | Min Score | Threshold |
-| ----------------- | --------- | --------- |
-| **dog**           | .7        | .9        |
-| **cat**           | .65       | .8        |
-| **face**          | .7        |           |
-| **package**       | .65       | .9        |
-| **license_plate** | .6        |           |
-| **amazon**        | .75       |           |
-| **ups**           | .75       |           |
-| **fedex**         | .75       |           |
-| **person**        | .65       | .85       |
-| **car**           | .65       | .85       |
+| Object            | Minimum confidence | Confidence threshold |
+| ----------------- | ------------------ | -------------------- |
+| **dog**           | .7                 | .9                   |
+| **cat**           | .65                | .8                   |
+| **face**          | .7                 |                      |
+| **package**       | .65                | .9                   |
+| **license_plate** | .6                 |                      |
+| **amazon**        | .75                |                      |
+| **ups**           | .75                |                      |
+| **fedex**         | .75                |                      |
+| **person**        | .65                | .85                  |
+| **car**           | .65                | .85                  |
 
 </TabItem>
 <TabItem value="yaml">
